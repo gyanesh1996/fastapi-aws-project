@@ -1,329 +1,196 @@
+import re
+import random
+from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 import httpx
-import random
-from typing import List, Dict, Any
 
 app = FastAPI(title="Advanced URL Redirect Tracer")
 
 USER_AGENTS = {
-    "desktop": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "android": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-    "ios": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+    "desktop": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "android": "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
+    "ios": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
 }
 
 COUNTRY_LANGUAGES = {
     "US": "en-US,en;q=0.9",
-    "GB": "en-GB,en;q=0.9",
     "IN": "en-IN,en;q=0.9",
+    "GB": "en-GB,en;q=0.9",
     "DE": "de-DE,de;q=0.9",
     "FR": "fr-FR,fr;q=0.9",
 }
 
-US_IPS = [
-    "16.179.114.232", "9.94.110.41", "22.184.83.20", "24.164.96.187", "9.176.58.32",
-    "40.111.207.210", "12.156.95.66", "22.72.67.81", "23.238.58.32", "9.132.222.60",
-    "11.94.33.236", "13.27.98.249", "30.101.17.180", "12.181.245.121", "16.0.87.149",
-    "38.68.111.158", "32.204.187.226", "8.83.50.244", "23.63.76.223", "30.177.209.211",
-    "24.227.39.184", "3.221.144.220", "7.193.241.125", "28.12.231.21", "20.1.196.6"
-]
-
-IN_IPS = [
-    "47.8.81.126", "98.70.191.81", "103.175.95.214", "121.241.186.43", "49.41.77.36",
-    "47.29.100.43", "122.168.20.81", "59.91.43.91", "20.235.135.151", "122.170.16.15"
-]
-
+US_IPS = ["24.227.39.184", "3.221.144.220", "16.179.114.232"]
+IN_IPS = ["121.241.186.43", "47.8.81.126", "98.70.191.81"]
 
 def get_spoofed_ip(country: str) -> str:
-    country_upper = country.upper()
-    if country_upper == "IN":
-        return random.choice(IN_IPS)
-    return random.choice(US_IPS)
+    return random.choice(IN_IPS) if country.upper() == "IN" else random.choice(US_IPS)
 
+def extract_js_or_meta_redirect(html_content: str) -> str | None:
+    """Finds client-side redirects embedded in HTML or JS execution code."""
+    # Check Meta refresh tag
+    meta_match = re.search(r'<meta[^>]*http-equiv=["\']refresh["\'][^>]*content=["\']\d+;\s*url=([^"\']+)["\']', html_content, re.I)
+    if meta_match:
+        return meta_match.group(1)
+
+    # Check JS window.location / href assignments
+    js_match = re.search(r'(?:window\.location(?:\.href)?|location\.href)\s*=\s*["\']([^"\']+)["\']', html_content, re.I)
+    if js_match:
+        return js_match.group(1)
+
+    return None
 
 @app.get("/api/trace")
 async def trace_url(
     url: str = Query(..., description="Target URL"),
-    device: str = Query("desktop", description="Device type: desktop, android, ios"),
-    country: str = Query("US", description="Country code: US, GB, IN, DE, FR")
+    device: str = Query("android", description="Device type"),
+    country: str = Query("IN", description="Country code")
 ) -> Dict[str, Any]:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
 
-    user_agent = USER_AGENTS.get(device.lower(), USER_AGENTS["desktop"])
-    accept_language = COUNTRY_LANGUAGES.get(country.upper(), COUNTRY_LANGUAGES["US"])
-    spoofed_ip = get_spoofed_ip(country)
+    ua = USER_AGENTS.get(device.lower(), USER_AGENTS["android"])
+    lang = COUNTRY_LANGUAGES.get(country.upper(), COUNTRY_LANGUAGES["IN"])
+    ip = get_spoofed_ip(country)
 
-    headers = {
-        "User-Agent": user_agent,
-        "Accept-Language": accept_language,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7",
-        "X-Forwarded-For": spoofed_ip,
-        "X-Real-IP": spoofed_ip,
-        "CF-Connecting-IP": spoofed_ip,
-        "X-Client-IP": spoofed_ip
+    base_headers = {
+        "User-Agent": ua,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": lang,
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "X-Forwarded-For": ip,
+        "X-Real-IP": ip,
+        "CF-Connecting-IP": ip,
     }
 
     redirect_chain: List[Dict[str, Any]] = []
-    visited_urls = set()
+    visited = set()
     current_url = url
+    max_steps = 10
 
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=12.0, headers=headers) as client:
-            max_depth = 10
-            depth = 0
+    async with httpx.AsyncClient(follow_redirects=False, timeout=15.0, verify=False) as client:
+        for _ in range(max_steps):
+            if not current_url or current_url in visited:
+                break
+            visited.add(current_url)
 
-            while current_url and current_url not in visited_urls and depth < max_depth:
-                visited_urls.add(current_url)
-                depth += 1
+            # Pass Referer header from previous hop if available
+            headers = base_headers.copy()
+            if redirect_chain:
+                headers["Referer"] = redirect_chain[-1]["url"]
+                headers["Sec-Fetch-Site"] = "cross-site"
 
-                response = await client.get(current_url)
+            try:
+                resp = await client.get(current_url, headers=headers)
+            except Exception as exc:
+                redirect_chain.append({
+                    "url": current_url,
+                    "status_code": 500,
+                    "reason": f"Request Failed: {str(exc)}",
+                    "response_body": None
+                })
+                break
 
-                for history_resp in response.history:
-                    redirect_chain.append({
-                        "url": str(history_resp.url),
-                        "status_code": history_resp.status_code,
-                        "reason": history_resp.reason_phrase or "Redirect",
-                        "response_body": None
-                    })
+            body_data = None
+            next_target = None
 
-                body_content = None
-                next_url_from_json = None
-
+            # 1. Handle HTTP standard redirects (301, 302, 303, 307, 308)
+            if resp.is_redirect or "location" in resp.headers:
+                next_target = resp.headers.get("location")
+            else:
+                # 2. Check JSON bodies for embedded click URLs
                 try:
-                    body_json = response.json()
-                    body_content = body_json
-                    if isinstance(body_json, dict):
-                        # Extract next destination from common tracking JSON fields
-                        next_url_from_json = (
-                            body_json.get("clickUrl") or 
-                            body_json.get("click_url") or 
-                            body_json.get("url") or 
-                            body_json.get("redirect")
+                    json_data = resp.json()
+                    body_data = json_data
+                    if isinstance(json_data, dict):
+                        next_target = (
+                            json_data.get("clickUrl") or 
+                            json_data.get("click_url") or 
+                            json_data.get("url") or 
+                            json_data.get("redirect")
                         )
                 except Exception:
-                    if "application/json" in response.headers.get("content-type", "") or len(response.text) < 1000:
-                        body_content = response.text
+                    # 3. Check HTML body for Meta refresh or JS location redirects
+                    if len(resp.text) < 10000:
+                        body_data = resp.text
+                        next_target = extract_js_or_meta_redirect(resp.text)
 
-                redirect_chain.append({
-                    "url": str(response.url),
-                    "status_code": response.status_code,
-                    "reason": response.reason_phrase or "OK",
-                    "response_body": body_content
-                })
+            redirect_chain.append({
+                "url": str(resp.url),
+                "status_code": resp.status_code,
+                "reason": resp.reason_phrase or "OK",
+                "response_body": body_data
+            })
 
-                # If JSON payload contains a clickUrl, follow it to reveal the final landing page
-                if next_url_from_json and isinstance(next_url_from_json, str):
-                    current_url = next_url_from_json
-                else:
-                    break
+            if next_target:
+                # Resolve relative URLs
+                current_url = str(httpx.URL(current_url).join(next_target))
+            else:
+                break
 
-        return {
-            "initial_url": url,
-            "device": device,
-            "country": country,
-            "spoofed_ip": spoofed_ip,
-            "total_redirects": len(redirect_chain) - 1,
-            "chain": redirect_chain
-        }
-
-    except httpx.RequestError as exc:
-        raise HTTPException(status_code=400, detail=f"Failed to trace URL: {str(exc)}")
-
+    return {
+        "initial_url": url,
+        "device": device,
+        "country": country,
+        "spoofed_ip": ip,
+        "total_redirects": len(redirect_chain) - 1 if len(redirect_chain) > 1 else 0,
+        "chain": redirect_chain
+    }
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
     return """
     <!DOCTYPE html>
-    <html lang="en">
+    <html>
     <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Affiliate Link & Redirect Tracer</title>
+        <title>Tracking Link Tracer</title>
         <style>
-            * { box-sizing: border-box; }
-            body {
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                margin: 0;
-                padding: 40px 20px;
-                min-height: 100vh;
-                background: url('https://img.freepik.com/free-vector/blurred-bokeh-light-red-background_260559-335.jpg?w=1480') no-repeat center center fixed;
-                background-size: cover;
-                display: flex;
-                justify-content: center;
-                align-items: flex-start;
-            }
-
-            .container {
-                width: 100%;
-                max-width: 900px;
-                background: rgba(255, 255, 255, 0.94);
-                backdrop-filter: blur(8px);
-                padding: 35px;
-                border-radius: 16px;
-                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-                border: 1px solid rgba(255, 255, 255, 0.4);
-            }
-
-            .tabs {
-                display: flex;
-                gap: 20px;
-                border-bottom: 2px solid #e2e8f0;
-                margin-bottom: 25px;
-            }
-
-            .tab-btn {
-                padding: 10px 15px;
-                font-weight: 700;
-                cursor: pointer;
-                border: none;
-                background: none;
-                color: #a855f7;
-                font-size: 17px;
-                border-bottom: 3px solid #a855f7;
-            }
-
-            .url-box {
-                width: 100%;
-                padding: 16px;
-                font-size: 16px;
-                border: 2px solid #cbd5e1;
-                border-radius: 10px;
-                margin-bottom: 20px;
-                outline: none;
-                transition: border-color 0.2s, box-shadow 0.2s;
-            }
-
-            .controls-grid {
-                display: flex;
-                gap: 15px;
-                flex-wrap: wrap;
-            }
-
-            select {
-                flex: 1;
-                min-width: 180px;
-                padding: 14px;
-                border: 2px solid #cbd5e1;
-                border-radius: 10px;
-                font-size: 15px;
-                background: white;
-                outline: none;
-            }
-
-            .submit-btn {
-                padding: 14px 40px;
-                font-weight: 700;
-                background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
-                color: white;
-                border: none;
-                border-radius: 10px;
-                cursor: pointer;
-                font-size: 16px;
-                box-shadow: 0 4px 14px rgba(168, 85, 247, 0.4);
-            }
-
-            .card {
-                background: #ffffff;
-                border: 1px solid #e2e8f0;
-                border-left: 6px solid #a855f7;
-                padding: 16px;
-                border-radius: 10px;
-                margin-top: 14px;
-            }
-
-            .status-301, .status-302 { color: #d97706; font-weight: bold; }
-            .status-200 { color: #16a34a; font-weight: bold; }
-
-            .url-text {
-                font-family: "Fira Code", Monaco, Consolas, monospace;
-                word-break: break-all;
-                color: #334155;
-                margin-top: 6px;
-                font-size: 14px;
-            }
-
-            .info-badge {
-                display: inline-block;
-                background: #f1f5f9;
-                color: #475569;
-                padding: 4px 10px;
-                border-radius: 6px;
-                font-size: 13px;
-                font-weight: 600;
-                margin-bottom: 12px;
-            }
+            body { font-family: sans-serif; padding: 30px; background: #f4f6f8; }
+            .box { max-width: 800px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; }
+            input, select, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+            button { background: #8b5cf6; color: white; border: none; font-weight: bold; cursor: pointer; }
+            .card { background: #fafafa; border-left: 4px solid #8b5cf6; padding: 12px; margin-top: 10px; word-break: break-all; }
         </style>
     </head>
     <body>
-        <div class="container">
-            <div class="tabs">
-                <button class="tab-btn">Tracking Link</button>
-            </div>
-
-            <input type="text" id="urlInput" class="url-box" placeholder="Enter your affiliate/tracking link..." />
-
-            <div class="controls-grid">
-                <select id="deviceSelect">
-                    <option value="android">Android</option>
-                    <option value="ios">iOS (iPhone)</option>
-                    <option value="desktop">Desktop (Windows/Chrome)</option>
-                </select>
-
-                <select id="countrySelect">
-                    <option value="US">United States</option>
-                    <option value="IN">India</option>
-                    <option value="GB">United Kingdom</option>
-                    <option value="DE">Germany</option>
-                    <option value="FR">France</option>
-                </select>
-
-                <button class="submit-btn" onclick="traceUrl()">SUBMIT</button>
-            </div>
-
-            <div id="results" style="margin-top: 30px;"></div>
+        <div class="box">
+            <h2>Tracking Link Tracer</h2>
+            <input type="text" id="url" placeholder="Enter tracking link...">
+            <select id="device">
+                <option value="android">Android</option>
+                <option value="ios">iOS</option>
+                <option value="desktop">Desktop</option>
+            </select>
+            <select id="country">
+                <option value="IN">India</option>
+                <option value="US">United States</option>
+            </select>
+            <button onclick="runTrace()">SUBMIT</button>
+            <div id="out"></div>
         </div>
-
         <script>
-            async function traceUrl() {
-                const url = document.getElementById('urlInput').value.trim();
-                const device = document.getElementById('deviceSelect').value;
-                const country = document.getElementById('countrySelect').value;
-                const resultsDiv = document.getElementById('results');
-
-                if (!url) return;
-                resultsDiv.innerHTML = "<p style='color:#64748b; font-weight:600;'>Tracing link redirections...</p>";
-
-                try {
-                    const endpoint = `/api/trace?url=${encodeURIComponent(url)}&device=${device}&country=${country}`;
-                    const res = await fetch(endpoint);
-                    const data = await res.json();
-
-                    if (!res.ok) throw new Error(data.detail || "Trace failed");
-
-                    let html = `<div class="info-badge">Spoofed IP: <strong>${data.spoofed_ip}</strong> (${data.country})</div>`;
-                    html += `<h3 style="color:#1e293b; margin-top: 5px;">Total Redirections: ${data.total_redirects}</h3>`;
-                    
-                    data.chain.forEach((step, idx) => {
-                        let bodyHtml = '';
-                        if (step.response_body) {
-                            const bodyStr = typeof step.response_body === 'object' 
-                                ? JSON.stringify(step.response_body, null, 2) 
-                                : step.response_body;
-                            bodyHtml = `<pre style="background: #1e293b; color: #f8fafc; padding: 12px; border-radius: 6px; font-size: 13px; overflow-x: auto; margin-top: 10px; white-space: pre-wrap; word-break: break-all;">${bodyStr}</pre>`;
-                        }
-
-                        html += `
-                            <div class="card">
-                                <div><strong>Step ${idx + 1}:</strong> <span class="status status-${step.status_code}">${step.status_code} ${step.reason}</span></div>
-                                <div class="url-text">${step.url}</div>
-                                ${bodyHtml}
-                            </div>`;
-                    });
-                    resultsDiv.innerHTML = html;
-                } catch (err) {
-                    resultsDiv.innerHTML = `<p style="color: #ef4444; font-weight:600;">Error: ${err.message}</p>`;
-                }
+            async function runTrace() {
+                const u = document.getElementById('url').value;
+                const d = document.getElementById('device').value;
+                const c = document.getElementById('country').value;
+                const out = document.getElementById('out');
+                out.innerHTML = "Tracing...";
+                
+                const res = await fetch(`/api/trace?url=${encodeURIComponent(u)}&device=${d}&country=${c}`);
+                const data = await res.json();
+                
+                let h = `<h4>Total Redirections: ${data.total_redirects}</h4>`;
+                data.chain.forEach((s, i) => {
+                    h += `<div class="card"><strong>Step ${i+1} (${s.status_code}):</strong> ${s.url}</div>`;
+                });
+                out.innerHTML = h;
             }
         </script>
     </body>
