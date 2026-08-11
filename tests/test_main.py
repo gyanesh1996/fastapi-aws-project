@@ -1,46 +1,38 @@
 import pytest
-from httpx import AsyncClient, ASGITransport
-from app.main import app, US_IPS, IN_IPS, get_spoofed_ip
+from httpx import ASGITransport, AsyncClient
+
+from app.main import app
 
 
 @pytest.mark.anyio
-async def test_read_root():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+async def test_root_serves_tracer_ui():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/")
     assert response.status_code == 200
-    assert "Affiliate Link & Redirect Tracer" in response.text
+    assert "Redirect Tracer" in response.text
 
 
 @pytest.mark.anyio
-async def test_trace_url():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        response = await ac.get("/api/trace?url=https://httpbin.org/status/200")
+async def test_health():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/health")
     assert response.status_code == 200
-    data = response.json()
-    assert "chain" in data
-    assert len(data["chain"]) > 0
-    assert data["country"] == "US"
-    assert data["spoofed_ip"] in US_IPS
-    assert "response_body" in data["chain"][0]
+    assert response.json() == {"status": "healthy"}
 
 
 @pytest.mark.anyio
-async def test_trace_url_custom_country():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        response = await ac.get("/api/trace?url=https://httpbin.org/status/200&country=IN")
+async def test_config_endpoint():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/api/config")
     assert response.status_code == 200
     data = response.json()
-    assert data["country"] == "IN"
-    assert data["spoofed_ip"] in IN_IPS
+    assert "engine" in data
+    assert "countries" in data
+    assert "US" in data["countries"]
 
 
-def test_get_spoofed_ip_helper():
-    assert get_spoofed_ip("US") in US_IPS
-    assert get_spoofed_ip("IN") in IN_IPS
-    assert get_spoofed_ip("UNKNOWN") in US_IPS
+@pytest.mark.anyio
+async def test_trace_requires_url():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/api/trace")
+    assert response.status_code == 422

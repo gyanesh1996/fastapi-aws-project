@@ -70,4 +70,7 @@ jobs:
             docker pull ${{ steps.login-ecr.outputs.registry }}/fastapi-backend:latest
             docker stop fastapi-app || true
             docker rm fastapi-app || true
-            docker run -d -p 80:8000 --name fastapi-app --restart always ${{ steps.login-ecr.outputs.registry }}/fastapi-backend:latest
+            docker run -d -p 80:8000 --name fastapi-app --restart always \
+              -e SCRAPERAPI_KEY='${{ secrets.SCRAPERAPI_KEY }}' \
+              -e PROXY_TIER='${{ secrets.PROXY_TIER }}' \
+              ${{ steps.login-ecr.outputs.registry }}/fastapi-backend:latest

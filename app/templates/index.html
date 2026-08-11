@@ -1,149 +1,308 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CleanEarth Initiative | Join the Cause</title>
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirect Tracer — Affiliate & Tracking Link Analyzer</title>
+    <style>
+        :root {
+            --accent: #7c3aed;
+            --accent-2: #a855f7;
+            --bg: #f4f5fb;
+            --card: #ffffff;
+            --ink: #1e293b;
+            --muted: #64748b;
+            --line: #e5e7f0;
+            --ok: #16a34a;
+            --warn: #d97706;
+            --err: #dc2626;
+            --chip: #f1f5f9;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0; padding: 32px 16px; min-height: 100vh; color: var(--ink);
+            background: radial-gradient(1200px 500px at 80% -10%, #efe7ff, transparent), var(--bg);
+        }
+        .wrap { max-width: 1040px; margin: 0 auto; }
+        .head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+        .logo {
+            width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            color: #fff; font-weight: 800; font-size: 20px;
+            box-shadow: 0 6px 18px rgba(124, 58, 237, .35);
+        }
+        .head h1 { font-size: 22px; margin: 0; }
+        .head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+        .panel {
+            background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+            padding: 22px; box-shadow: 0 12px 30px rgba(30, 41, 59, .06);
+        }
+        .url-box {
+            width: 100%; padding: 15px 16px; font-size: 15px; border: 2px solid var(--line);
+            border-radius: 11px; outline: none; transition: border-color .15s, box-shadow .15s;
+            font-family: "Fira Code", Monaco, Consolas, monospace;
+        }
+        .url-box:focus { border-color: var(--accent-2); box-shadow: 0 0 0 4px rgba(168,85,247,.12); }
+        .controls { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; align-items: end; }
+        .field { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 150px; }
+        .field label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+        select {
+            padding: 12px; border: 2px solid var(--line); border-radius: 10px; font-size: 14px;
+            background: #fff; outline: none; cursor: pointer;
+        }
+        select:focus { border-color: var(--accent-2); }
+        .switch { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); padding-bottom: 12px; }
+        .btn {
+            padding: 13px 34px; font-weight: 800; letter-spacing: .03em; color: #fff; border: none;
+            border-radius: 10px; cursor: pointer; font-size: 15px;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+            box-shadow: 0 6px 16px rgba(124,58,237,.35); transition: transform .06s;
+        }
+        .btn:active { transform: translateY(1px); }
+        .btn:disabled { opacity: .6; cursor: not-allowed; }
+        .badges { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+        .badge {
+            display: inline-flex; align-items: center; gap: 7px; background: var(--chip);
+            color: #475569; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;
+        }
+        .badge b { color: var(--ink); }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+        .dot.direct { background: var(--warn); }
+
+        /* Chain flow (icon arrows like AffiliTest) */
+        .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 22px; }
+        .node {
+            display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 74px; text-align: center;
+        }
+        .node .ic {
+            width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; font-size: 22px;
+            background: #fff; border: 2px solid var(--line);
+        }
+        .node .ic.store { border-color: var(--ok); background: #f0fdf4; }
+        .node .ic.err { border-color: var(--err); background: #fef2f2; }
+        .node .nm { font-size: 11px; color: var(--muted); font-weight: 700; max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .arrow { color: #cbd5e1; font-size: 20px; font-weight: 700; }
+
+        /* Hop cards */
+        .hops { margin-top: 22px; display: flex; flex-direction: column; gap: 12px; }
+        .hop {
+            background: #fff; border: 1px solid var(--line); border-left: 5px solid var(--accent-2);
+            border-radius: 11px; padding: 14px 16px;
+        }
+        .hop.err { border-left-color: var(--err); }
+        .hop.store { border-left-color: var(--ok); }
+        .hop-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .step-no { font-weight: 800; color: var(--muted); font-size: 13px; }
+        .status { font-weight: 800; font-size: 13px; padding: 2px 8px; border-radius: 6px; }
+        .s2 { color: var(--ok); background: #f0fdf4; }
+        .s3 { color: var(--warn); background: #fffbeb; }
+        .s4, .s5, .s0 { color: var(--err); background: #fef2f2; }
+        .plat { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #6d28d9; background: #f5f3ff; padding: 3px 9px; border-radius: 6px; }
+        .rtype { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+        .hop-url { font-family: "Fira Code", Monaco, Consolas, monospace; font-size: 13px; color: #334155; word-break: break-all; margin-top: 8px; }
+        .hop-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 11px; color: var(--muted); }
+        .snippet {
+            background: #0f172a; color: #e2e8f0; padding: 11px; border-radius: 8px; font-size: 12px;
+            overflow-x: auto; margin-top: 10px; white-space: pre-wrap; word-break: break-all;
+            font-family: "Fira Code", Monaco, Consolas, monospace; max-height: 220px;
+        }
+        .dest {
+            margin-top: 20px; border: 1px solid var(--ok); background: #f0fdf4; border-radius: 12px; padding: 16px;
+        }
+        .dest h3 { margin: 0 0 8px; font-size: 15px; color: #166534; }
+        .dest .row { display: flex; gap: 10px; font-size: 13px; margin: 3px 0; }
+        .dest .row span:first-child { color: var(--muted); min-width: 90px; font-weight: 600; }
+        .shot { margin-top: 16px; }
+        .shot img { max-width: 320px; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 8px 20px rgba(0,0,0,.12); }
+        .warn { margin-top: 14px; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 11px 14px; border-radius: 10px; font-size: 13px; }
+        .muted { color: var(--muted); font-size: 13px; }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 3px solid #ddd; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -3px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        h2.section { font-size: 16px; margin: 24px 0 4px; }
+    </style>
 </head>
 <body>
-
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success sticky-top shadow-sm">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="#"><i class="bi bi-tree-fill me-2"></i>CleanEarth</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item"><a class="nav-link active" href="#hero">Home</a></li>
-                    <li class="nav-item"><a class="nav-link" href="#about">About Cause</a></li>
-                    <li class="nav-item"><a class="nav-link" href="#stats">Impact</a></li>
-                    <li class="nav-item"><a class="nav-link btn btn-outline-light ms-lg-3 px-3 mt-2 mt-lg-0" href="#join">Get Involved</a></li>
-                </ul>
+    <div class="wrap">
+        <div class="head">
+            <div class="logo">↳</div>
+            <div>
+                <h1>Redirect Tracer</h1>
+                <p>Full affiliate / tracking-link chain analyzer — HTTP, meta, JavaScript &amp; SDK redirects via real geo proxies</p>
             </div>
         </div>
-    </nav>
 
-    <!-- Hero Section -->
-    <section id="hero" class="bg-dark text-white text-center py-5 position-relative" style="background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url('https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80') center/cover no-repeat; min-height: 70vh;">
-        <div class="container d-flex flex-column justify-content-center align-items-center h-100 py-5">
-            <span class="badge bg-success mb-3 px-3 py-2 fs-6">Global Awareness Campaign</span>
-            <h1 class="display-3 fw-bold mb-3">Protect Our Planet Today</h1>
-            <p class="lead mb-4 text-light w-75">Plastic pollution threatens our oceans and wildlife. Together, we can drive sustainable change and clean up our environment.</p>
-            <div class="d-flex gap-3">
-                <a href="#join" class="btn btn-success btn-lg px-4">Take Action Now</a>
-                <a href="#about" class="btn btn-outline-light btn-lg px-4">Learn More</a>
+        <div class="panel">
+            <input id="url" class="url-box" placeholder="Paste your tracking / affiliate link (e.g. https://r.prmin.net/o/out?...)" />
+            <div class="controls">
+                <div class="field">
+                    <label>Device</label>
+                    <select id="device">
+                        <option value="android">Android</option>
+                        <option value="ios">iOS (iPhone)</option>
+                        <option value="desktop">Desktop (Windows)</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Country</label>
+                    <select id="country"></select>
+                </div>
+                <div class="field">
+                    <label>Proxy tier</label>
+                    <select id="tier">
+                        <option value="">Server default</option>
+                        <option value="auto">Auto (escalate)</option>
+                        <option value="basic">Datacenter</option>
+                        <option value="premium">Residential</option>
+                        <option value="ultra">Ultra-premium</option>
+                    </select>
+                </div>
+                <div class="switch">
+                    <input type="checkbox" id="shot" /> <label for="shot" style="cursor:pointer">Screenshot</label>
+                </div>
+                <button class="btn" id="go" onclick="run()">TRACE</button>
             </div>
+            <div class="badges" id="engineBadges"></div>
         </div>
-    </section>
 
-    <!-- Impact Stats -->
-    <section id="stats" class="bg-success text-white py-4">
-        <div class="container">
-            <div class="row text-center g-4">
-                <div class="col-md-4">
-                    <h2 class="display-5 fw-bold">8.3B+</h2>
-                    <p class="mb-0">Tons of plastic produced worldwide</p>
-                </div>
-                <div class="col-md-4">
-                    <h2 class="display-5 fw-bold">50,000+</h2>
-                    <p class="mb-0">Active community volunteers</p>
-                </div>
-                <div class="col-md-4">
-                    <h2 class="display-5 fw-bold">120+</h2>
-                    <p class="mb-0">Clean-up drives completed</p>
-                </div>
-            </div>
-        </div>
-    </section>
+        <div id="results"></div>
+    </div>
 
-    <!-- About / Key Issues -->
-    <section id="about" class="py-5">
-        <div class="container py-4">
-            <div class="text-center mb-5">
-                <h2 class="fw-bold">Why This Matters</h2>
-                <p class="text-muted">Small actions lead to massive impact when we act together.</p>
-            </div>
-            <div class="row g-4">
-                <div class="col-md-4">
-                    <div class="card h-100 border-0 shadow-sm text-center p-4">
-                        <div class="card-body">
-                            <i class="bi bi-droplet-half text-success display-4 mb-3"></i>
-                            <h5 class="card-title fw-bold">Ocean Protection</h5>
-                            <p class="card-text text-muted">Over 8 million tons of plastic enter our oceans every year, damaging marine ecosystems.</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card h-100 border-0 shadow-sm text-center p-4">
-                        <div class="card-body">
-                            <i class="bi bi-recycle text-success display-4 mb-3"></i>
-                            <h5 class="card-title fw-bold">Zero Waste Living</h5>
-                            <p class="card-text text-muted">We educate communities on reduction, reuse, and effective recycling strategies.</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card h-100 border-0 shadow-sm text-center p-4">
-                        <div class="card-body">
-                            <i class="bi bi-people-fill text-success display-4 mb-3"></i>
-                            <h5 class="card-title fw-bold">Community Action</h5>
-                            <p class="card-text text-muted">Empowering local volunteers to organize beach and park cleanups worldwide.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
+    <script>
+        const $ = (id) => document.getElementById(id);
+        let CFG = null;
 
-    <!-- Join / Action Form -->
-    <section id="join" class="bg-light py-5">
-        <div class="container py-4">
-            <div class="row justify-content-center">
-                <div class="col-lg-6">
-                    <div class="card border-0 shadow p-4">
-                        <div class="card-body">
-                            <h3 class="fw-bold text-center mb-2">Pledge to Make a Change</h3>
-                            <p class="text-muted text-center mb-4">Join our community newsletter and pledge to reduce single-use plastic.</p>
-                            <form>
-                                <div class="mb-3">
-                                    <label class="form-label font-weight-bold">Full Name</label>
-                                    <input type="text" class="form-control" placeholder="Jane Doe" required>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">Email Address</label>
-                                    <input type="email" class="form-control" placeholder="jane@example.com" required>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">How would you like to contribute?</label>
-                                    <select class="form-select">
-                                        <option selected>Volunteer for cleanups</option>
-                                        <option>Spread awareness online</option>
-                                        <option>Donate to campaigns</option>
-                                    </select>
-                                </div>
-                                <button type="submit" class="btn btn-success w-100 btn-lg mt-2">Take the Pledge</button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
+        async function boot() {
+            try {
+                const r = await fetch('/api/config');
+                CFG = await r.json();
+                const sel = $('country');
+                const entries = Object.entries(CFG.countries || { US: 'United States' });
+                sel.innerHTML = entries.map(([code, label]) =>
+                    `<option value="${code}"${code === 'IN' ? ' selected' : ''}>${label}</option>`).join('');
+                const engine = CFG.scraperapi_enabled;
+                $('engineBadges').innerHTML =
+                    `<span class="badge"><span class="dot ${engine ? '' : 'direct'}"></span>Engine: <b>${engine ? 'ScraperAPI (geo proxy)' : 'Direct (no proxy)'}</b></span>` +
+                    `<span class="badge">Default tier: <b>${CFG.default_tier}</b></span>` +
+                    `<span class="badge">Max hops: <b>${CFG.max_hops}</b></span>` +
+                    (engine ? '' : '<span class="badge" style="color:#92400e;background:#fffbeb">⚠ Set SCRAPERAPI_KEY for real geo egress</span>');
+            } catch (e) {
+                $('engineBadges').innerHTML = '<span class="badge">Could not load config</span>';
+            }
+        }
 
-    <!-- Footer -->
-    <footer class="bg-dark text-white py-4 text-center">
-        <div class="container">
-            <p class="mb-0">&copy; 2026 SMARTYGD. Built for social awareness.</p>
-        </div>
-    </footer>
+        function statusClass(code) {
+            if (!code) return 's0';
+            return 's' + String(code)[0];
+        }
 
-    <!-- Bootstrap 5 JS Bundle -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/bootstrap.bundle.min.js"></script>
+        function run() {
+            const url = $('url').value.trim();
+            if (!url) { $('url').focus(); return; }
+            const device = $('device').value;
+            const country = $('country').value;
+            const tier = $('tier').value;
+            const shot = $('shot').checked;
+            const btn = $('go');
+            btn.disabled = true; btn.textContent = 'TRACING…';
+            $('results').innerHTML = `<div class="panel" style="margin-top:16px"><span class="spinner"></span> <span class="muted">Following the redirect chain from ${country} on ${device}… this can take 10–40s with residential proxies${shot ? ' + screenshot' : ''}.</span></div>`;
+
+            const qs = new URLSearchParams({ url, device, country, screenshot: shot });
+            if (tier) qs.set('tier', tier);
+
+            fetch('/api/trace?' + qs.toString())
+                .then(r => r.json().then(d => ({ ok: r.ok, d })))
+                .then(({ ok, d }) => {
+                    if (!ok) throw new Error(d.detail || 'Trace failed');
+                    render(d);
+                })
+                .catch(err => {
+                    $('results').innerHTML = `<div class="panel" style="margin-top:16px;color:var(--err)"><b>Error:</b> ${err.message}</div>`;
+                })
+                .finally(() => { btn.disabled = false; btn.textContent = 'TRACE'; });
+        }
+
+        function render(d) {
+            let html = '<div class="panel" style="margin-top:16px">';
+
+            // Summary badges
+            html += '<div class="badges">';
+            html += `<span class="badge"><span class="dot ${d.engine === 'scraperapi' ? '' : 'direct'}"></span>${d.egress_note || (d.engine === 'scraperapi' ? 'ScraperAPI' : 'Direct mode')}</span>`;
+            if (d.egress_ip) html += `<span class="badge">Egress IP: <b>${d.egress_ip}</b> (${d.country})</span>`;
+            html += `<span class="badge">Device: <b>${d.device}</b></span>`;
+            html += `<span class="badge">Country: <b>${d.country_label}</b></span>`;
+            html += '</div>';
+
+            html += `<h2 class="section">Total Redirections: ${d.total_redirects}</h2>`;
+
+            // Chain flow with platform icons
+            if (d.hops && d.hops.length) {
+                html += '<div class="flow">';
+                d.hops.forEach((h, i) => {
+                    const isStore = h.platform && h.platform.category === 'App Store';
+                    const isErr = h.redirect_type === 'error' || (h.status_code && h.status_code >= 400);
+                    const icon = h.platform ? ((h.platform.icon || '').trim() || '🔗') : (isErr ? '⛔' : '❓');
+                    const name = h.platform ? h.platform.name : 'Unknown';
+                    html += `<div class="node"><div class="ic ${isStore ? 'store' : ''} ${isErr ? 'err' : ''}">${icon}</div><div class="nm" title="${name}">${name}</div></div>`;
+                    if (i < d.hops.length - 1) html += '<span class="arrow">→</span>';
+                });
+                html += '</div>';
+            }
+
+            // Destination card
+            if (d.destination && d.destination.store) {
+                const dest = d.destination;
+                html += '<div class="dest"><h3>🎯 Destination detected</h3>';
+                html += `<div class="row"><span>Store</span><span><b>${dest.store}</b></span></div>`;
+                if (dest.app_name) html += `<div class="row"><span>App</span><span>${dest.app_name}</span></div>`;
+                if (dest.package) html += `<div class="row"><span>Package</span><span>${dest.package}</span></div>`;
+                if (dest.app_id) html += `<div class="row"><span>App ID</span><span>${dest.app_id}</span></div>`;
+                if (dest.url) html += `<div class="row"><span>URL</span><span style="word-break:break-all"><a href="${dest.url}" target="_blank" rel="noopener">${dest.url}</a></span></div>`;
+                html += '</div>';
+            }
+
+            // Screenshot
+            if (d.screenshot) {
+                html += `<div class="shot"><h2 class="section">Final page screenshot</h2><img src="${d.screenshot}" alt="final page" /></div>`;
+            }
+
+            // Warnings
+            (d.warnings || []).forEach(w => { html += `<div class="warn">⚠ ${w}</div>`; });
+
+            // Detailed hops
+            html += '<h2 class="section">Redirection details</h2><div class="hops">';
+            (d.hops || []).forEach(h => {
+                const isStore = h.platform && h.platform.category === 'App Store';
+                const isErr = h.redirect_type === 'error' || (h.status_code && h.status_code >= 400);
+                html += `<div class="hop ${isErr ? 'err' : ''} ${isStore ? 'store' : ''}">`;
+                html += '<div class="hop-top">';
+                html += `<span class="step-no">Step ${h.step}</span>`;
+                html += `<span class="status ${statusClass(h.status_code)}">${h.status_code || '—'} ${h.reason || ''}</span>`;
+                if (h.platform) html += `<span class="plat">${(h.platform.icon || '').trim()} ${h.platform.name}</span>`;
+                html += `<span class="rtype">${(h.redirect_type || '').replace('_', ' ')}</span>`;
+                html += '</div>';
+                html += `<div class="hop-url">${h.url}</div>`;
+                html += '<div class="hop-meta">';
+                if (h.tier_used) html += `<span>via: ${h.tier_used}${h.rendered ? ' + render' : ''}</span>`;
+                if (h.content_type) html += `<span>${h.content_type}</span>`;
+                if (h.server) html += `<span>server: ${h.server}</span>`;
+                if (typeof h.elapsed_ms === 'number') html += `<span>${h.elapsed_ms} ms</span>`;
+                html += '</div>';
+                if (h.note) html += `<div class="muted" style="margin-top:6px">${h.note}</div>`;
+                if (h.body_snippet) html += `<pre class="snippet">${escapeHtml(h.body_snippet)}</pre>`;
+                html += '</div>';
+            });
+            html += '</div></div>';
+
+            $('results').innerHTML = html;
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+        }
+
+        $('url').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+        boot();
+    </script>
 </body>
 </html>
