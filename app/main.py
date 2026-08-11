@@ -71,9 +71,7 @@ async def trace_url(
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
-    bg_image_url = "https://img.freepik.com/free-vector/blurred-bokeh-light-red-background_260559-335.jpg?w=1480"
-    
-    return f"""
+    return """
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -81,20 +79,20 @@ async def serve_ui():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Affiliate Link & Redirect Tracer</title>
         <style>
-            * {{ box-sizing: border-box; }}
-            body {{
+            * { box-sizing: border-box; }
+            body {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 margin: 0;
                 padding: 40px 20px;
                 min-height: 100vh;
-                background: url('{bg_image_url}') no-repeat center center fixed;
+                background: url('https://img.freepik.com/free-vector/blurred-bokeh-light-red-background_260559-335.jpg?w=1480') no-repeat center center fixed;
                 background-size: cover;
                 display: flex;
                 justify-content: center;
                 align-items: flex-start;
-            }}
+            }
 
-            .container {{
+            .container {
                 width: 100%;
                 max-width: 900px;
                 background: rgba(255, 255, 255, 0.94);
@@ -103,16 +101,16 @@ async def serve_ui():
                 border-radius: 16px;
                 box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
                 border: 1px solid rgba(255, 255, 255, 0.4);
-            }}
+            }
 
-            .tabs {{
+            .tabs {
                 display: flex;
                 gap: 20px;
                 border-bottom: 2px solid #e2e8f0;
                 margin-bottom: 25px;
-            }}
+            }
 
-            .tab-btn {{
+            .tab-btn {
                 padding: 10px 15px;
                 font-weight: 700;
                 cursor: pointer;
@@ -121,9 +119,9 @@ async def serve_ui():
                 color: #a855f7;
                 font-size: 17px;
                 border-bottom: 3px solid #a855f7;
-            }}
+            }
 
-            .url-box {{
+            .url-box {
                 width: 100%;
                 padding: 16px;
                 font-size: 16px;
@@ -132,20 +130,20 @@ async def serve_ui():
                 margin-bottom: 20px;
                 outline: none;
                 transition: border-color 0.2s, box-shadow 0.2s;
-            }}
+            }
 
-            .url-box:focus {{
+            .url-box:focus {
                 border-color: #a855f7;
                 box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.15);
-            }}
+            }
 
-            .controls-grid {{
+            .controls-grid {
                 display: flex;
                 gap: 15px;
                 flex-wrap: wrap;
-            }}
+            }
 
-            select {{
+            select {
                 flex: 1;
                 min-width: 180px;
                 padding: 14px;
@@ -155,13 +153,13 @@ async def serve_ui():
                 background: white;
                 outline: none;
                 cursor: pointer;
-            }}
+            }
 
-            select:focus {{
+            select:focus {
                 border-color: #a855f7;
-            }}
+            }
 
-            .submit-btn {{
+            .submit-btn {
                 padding: 14px 40px;
                 font-weight: 700;
                 background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
@@ -173,14 +171,14 @@ async def serve_ui():
                 letter-spacing: 0.5px;
                 box-shadow: 0 4px 14px rgba(168, 85, 247, 0.4);
                 transition: transform 0.1s, box-shadow 0.2s;
-            }}
+            }
 
-            .submit-btn:hover {{
+            .submit-btn:hover {
                 transform: translateY(-1px);
                 box-shadow: 0 6px 20px rgba(168, 85, 247, 0.6);
-            }}
+            }
 
-            .card {{
+            .card {
                 background: #ffffff;
                 border: 1px solid #e2e8f0;
                 border-left: 6px solid #a855f7;
@@ -188,18 +186,18 @@ async def serve_ui():
                 border-radius: 10px;
                 margin-top: 14px;
                 box-shadow: 0 2px 6px rgba(0,0,0,0.04);
-            }}
+            }
 
-            .status-301, .status-302 {{ color: #d97706; font-weight: bold; }}
-            .status-200 {{ color: #16a34a; font-weight: bold; }}
+            .status-301, .status-302 { color: #d97706; font-weight: bold; }
+            .status-200 { color: #16a34a; font-weight: bold; }
 
-            .url-text {{
+            .url-text {
                 font-family: "Fira Code", Monaco, Consolas, monospace;
                 word-break: break-all;
                 color: #334155;
                 margin-top: 6px;
                 font-size: 14px;
-            }}
+            }
         </style>
     </head>
     <body>
@@ -232,7 +230,7 @@ async def serve_ui():
         </div>
 
         <script>
-            async function traceUrl() {{
+            async function traceUrl() {
                 const url = document.getElementById('urlInput').value.trim();
                 const device = document.getElementById('deviceSelect').value;
                 const country = document.getElementById('countrySelect').value;
@@ -241,26 +239,26 @@ async def serve_ui():
                 if (!url) return;
                 resultsDiv.innerHTML = "<p style='color:#64748b; font-weight:600;'>Tracing link redirections...</p>";
 
-                try {{
-                    const endpoint = `/api/trace?url=${{encodeURIComponent(url)}}&device=${{device}}&country=${{country}}`;
+                try {
+                    const endpoint = `/api/trace?url=${encodeURIComponent(url)}&device=${device}&country=${country}`;
                     const res = await fetch(endpoint);
                     const data = await res.json();
 
                     if (!res.ok) throw new Error(data.detail || "Trace failed");
 
-                    let html = `<h3 style="color:#1e293b;">Total Redirections: ${{data.total_redirects}}</h3>`;
-                    data.chain.forEach((step, idx) => {{
+                    let html = `<h3 style="color:#1e293b;">Total Redirections: ${data.total_redirects}</h3>`;
+                    data.chain.forEach((step, idx) => {
                         html += `
                             <div class="card">
-                                <div><strong>Step ${{idx + 1}}:</strong> <span class="status status-${{step.status_code}}">${{step.status_code}} ${{step.reason}}</span></div>
-                                <div class="url-text">${{step.url}}</div>
+                                <div><strong>Step ${idx + 1}:</strong> <span class="status status-${step.status_code}">${step.status_code} ${step.reason}</span></div>
+                                <div class="url-text">${step.url}</div>
                             </div>`;
-                    }});
+                    });
                     resultsDiv.innerHTML = html;
-                }} catch (err) {{
-                    resultsDiv.innerHTML = `<p style="color: #ef4444; font-weight:600;">Error: ${{err.message}}</p>`;
-                }}
-            }}
+                } catch (err) {
+                    resultsDiv.innerHTML = `<p style="color: #ef4444; font-weight:600;">Error: ${err.message}</p>`;
+                }
+            }
         </script>
     </body>
     </html>

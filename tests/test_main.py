@@ -10,7 +10,7 @@ async def test_read_root():
     ) as ac:
         response = await ac.get("/")
     assert response.status_code == 200
-    assert "URL Redirect Tracer" in response.text
+    assert "Affiliate Link & Redirect Tracer" in response.text
 
 
 @pytest.mark.anyio
