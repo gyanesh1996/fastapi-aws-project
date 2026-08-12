@@ -30,6 +30,35 @@ def test_parse_destination_apple():
     assert dest["app_name"] == "Some Cool App"
 
 
+def test_app_scheme_conversion():
+    assert detect.to_store_https("market://details?id=com.grad.def&referrer=x") == \
+        "https://play.google.com/store/apps/details?id=com.grad.def&referrer=x"
+    assert detect.to_store_https("itms-apps://itunes.apple.com/app/id123") == "https://apps.apple.com/app/id123"
+    assert detect.is_store_url("market://details?id=com.grad.def")
+    # intent:// with an infra ;package= must fall back to the real store URL
+    intent = ("intent://x#Intent;scheme=https;package=com.android.vending;"
+              "S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.grad.def;end")
+    assert detect.to_store_https(intent) == "https://play.google.com/store/apps/details?id=com.grad.def"
+
+
+def test_destination_from_query_and_device_aware():
+    onelink = ("https://demo.onelink.me/abc?af_android_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.foo.bar"
+               "&af_ios_url=https%3A%2F%2Fapps.apple.com%2Fapp%2Fid123")
+    assert "id=com.foo.bar" in detect.destination_from_query(onelink, "android")
+    assert "apps.apple.com" in detect.destination_from_query(onelink, "ios")
+    # device-aware body scan when both stores are present
+    body = "a https://apps.apple.com/us/app/foo/id999 b https://play.google.com/store/apps/details?id=com.foo.bar c"
+    assert "play.google.com" in detect.find_destination(body, "android")
+    assert "apps.apple.com" in detect.find_destination(body, "ios")
+
+
+def test_find_destination_escaped_and_market():
+    escaped = 'x={"u":"https:\\/\\/play.google.com\\/store\\/apps\\/details?id=com.grad.def"}'
+    assert detect.find_destination(escaped) == "https://play.google.com/store/apps/details?id=com.grad.def"
+    encoded = "cta=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.grad.def"
+    assert "id=com.grad.def" in (detect.find_destination(encoded) or "")
+
+
 def test_is_store_url_and_find_store_links():
     assert detect.is_store_url("https://play.google.com/store/apps/details?id=com.x") is True
     assert detect.is_store_url("https://app.adjust.com/abc") is False
@@ -122,6 +151,96 @@ async def test_full_chain_http_then_meta_to_store(monkeypatch):
     assert result.final_platform.name == "Google Play"
     assert result.destination.package == "com.demo.app"
     assert result.country == "IN"
+
+
+@pytest.mark.anyio
+async def test_render_resolves_js_interstitial(monkeypatch):
+    """A JS 'Redirecting you to the store' page is resolved via sa-final-url."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SCRAPERAPI_KEY", "TESTKEY")
+    interstitial = "https://r.prmin.net/o/out?uh=1"
+    landing = "https://www.ayetstudios.com/s2/landing/280304/12822/15459/17693?external_identifier=1"
+
+    async def fake_fetch(self, url, *, headers, tier="basic", render=False, screenshot=False, timeout=None):
+        if "httpbin" in url:
+            return _canned(url, 200, {"content-type": "application/json"}, '{"origin":"59.178.102.125"}')
+        if render:
+            html = '<html><head><meta property="og:title" content="Farm Block Escape"></head><body>x</body></html>'
+            res = _canned(landing, 200, {"content-type": "text/html", "sa-final-url": landing}, html)
+            res.extra["final_url"] = landing
+            return res
+        if url == interstitial:
+            return _canned(url, 200, {"content-type": "text/html"}, "<html>Redirecting you to the store</html>")
+        return _canned(url, 200, {"content-type": "text/html"}, "")
+
+    monkeypatch.setattr(Fetcher, "fetch", fake_fetch)
+    result = await trace_url(interstitial, device="android", country="IN")
+
+    assert result.engine == "scraperapi"
+    assert any(h.redirect_type == "rendered" for h in result.hops)
+    assert result.final_url == landing
+    assert result.final_platform.name == "ayeT-Studios"
+    assert result.destination.app_name == "Farm Block Escape"
+    assert result.egress_ip == "59.178.102.125"
+
+
+@pytest.mark.anyio
+async def test_adjust_market_scheme_redirect(monkeypatch):
+    """Adjust 302 -> market://details?id=... (Android) resolves to the Play Store."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SCRAPERAPI_KEY", "K")
+    adjust = "https://app.adjust.com/1z7vij5x?campaign=x"
+    market = "market://details?id=com.grad.def&referrer=adjust_reftag%3Dabc"
+
+    async def fake_fetch(self, url, *, headers, tier="basic", render=False, screenshot=False, timeout=None):
+        if "httpbin" in url:
+            return _canned(url, 200, {"content-type": "application/json"}, '{"origin":"1.2.3.4"}')
+        assert not url.startswith("market://"), "market:// must never be HTTP-fetched"
+        if url.startswith("https://play.google.com/store"):
+            return _canned(url, 200, {"content-type": "text/html"},
+                           '<meta property="og:title" content="Yami Star - Voice Chat - Apps on Google Play">')
+        if url.startswith(adjust):
+            return _canned(url, 302, {"location": market, "server": "nginx"})
+        return _canned(url, 200, {"content-type": "text/html"}, "")
+
+    monkeypatch.setattr(Fetcher, "fetch", fake_fetch)
+    result = await trace_url(adjust, device="android", country="IN")
+
+    assert result.final_platform.name == "Google Play"
+    assert result.destination.package == "com.grad.def"
+    assert result.destination.app_name == "Yami Star - Voice Chat"
+    assert result.hops[-1].url.startswith("https://play.google.com/store")
+
+
+@pytest.mark.anyio
+async def test_mmp_fingerprint_resolved_by_bot_ua(monkeypatch):
+    """A 200 fingerprint page is resolved by re-fetching with a neutral UA."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SCRAPERAPI_KEY", "K")
+    adjust = "https://app.adjust.com/abc?x=1"
+    store = "https://play.google.com/store/apps/details?id=com.foo.bar"
+
+    async def fake_fetch(self, url, *, headers, tier="basic", render=False, screenshot=False, timeout=None):
+        ua = headers.get("User-Agent", "")
+        if "httpbin" in url:
+            return _canned(url, 200, {"content-type": "application/json"}, '{"origin":"1.2.3.4"}')
+        if url.startswith("https://play.google.com/store"):
+            return _canned(url, 200, {"content-type": "text/html"}, "<title>Foo Bar - Apps on Google Play</title>")
+        if url.startswith(adjust):
+            if "Mobile" not in ua:  # neutral/desktop UA -> clean https 302
+                return _canned(url, 302, {"location": store})
+            return _canned(url, 200, {"content-type": "text/html"}, "<html>fingerprinting, please wait</html>")
+        return _canned(url, 200, {"content-type": "text/html"}, "")
+
+    monkeypatch.setattr(Fetcher, "fetch", fake_fetch)
+    result = await trace_url(adjust, device="android", country="IN")
+
+    assert result.final_platform.name == "Google Play"
+    assert result.destination.package == "com.foo.bar"
+    assert any(h.note and "neutral User-Agent" in h.note for h in result.hops)
 
 
 @pytest.mark.anyio

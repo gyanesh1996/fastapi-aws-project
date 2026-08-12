@@ -23,9 +23,9 @@ from app.services.profiles import SCRAPERAPI_DEVICE_TYPE
 # Ordered escalation ladder for the "auto" tier. Each entry is (label, options).
 TIER_LADDER = ["basic", "premium", "ultra"]
 
-# Status codes that indicate the egress IP / proxy was blocked and a stronger
-# tier is worth trying.
-BLOCK_STATUS = {403, 407, 429, 503, 520, 521, 522, 523, 524}
+# Status codes that indicate the egress IP / proxy was blocked (or ScraperAPI
+# itself failed, e.g. 499 client-closed / 500) and a stronger tier is worth trying.
+BLOCK_STATUS = {403, 407, 429, 499, 500, 502, 503, 520, 521, 522, 523, 524}
 
 
 @dataclass
@@ -55,24 +55,28 @@ def _scraperapi_options(
     render: bool,
     screenshot: bool,
 ) -> Dict[str, str]:
+    rendering = render or screenshot
     opts: Dict[str, str] = {
-        "follow_redirect": "false",
-        "keep_headers": "true",
         "country_code": country.lower(),
         "device_type": SCRAPERAPI_DEVICE_TYPE.get(device, "desktop"),
     }
+    if rendering:
+        # Let the headless browser resolve JS/SDK redirects and follow the whole
+        # chain. Do NOT send keep_headers here: forwarding our custom UA / client
+        # hints to the render engine makes it fail (499). device_type sets the UA.
+        opts["render"] = "true"
+        opts["follow_redirect"] = "true"
+        if screenshot:
+            opts["screenshot"] = "true"
+    else:
+        # Raw HTTP tracing: we follow redirects ourselves so we see every hop,
+        # and forward our exact device headers.
+        opts["follow_redirect"] = "false"
+        opts["keep_headers"] = "true"
     if tier == "premium":
         opts["premium"] = "true"
     elif tier == "ultra":
         opts["ultra_premium"] = "true"
-    if render:
-        opts["render"] = "true"
-        # Let the headless browser resolve JS/SDK redirects to the real page.
-        opts["follow_redirect"] = "true"
-    if screenshot:
-        opts["screenshot"] = "true"
-        opts["render"] = "true"
-        opts["follow_redirect"] = "true"
     return opts
 
 
@@ -169,6 +173,11 @@ class Fetcher:
             render=render,
             screenshot=screenshot,
         )
+        # During render, ScraperAPI's browser manages headers (keep_headers is off),
+        # so send only a minimal Accept-Language and let device_type drive the UA.
+        send_headers = headers
+        if render or screenshot:
+            send_headers = {"Accept-Language": headers.get("Accept-Language", "en-US,en;q=0.9")}
         proxy = _proxy_url(opts)
         start = time.perf_counter()
         # ScraperAPI's proxy performs its own TLS to the target, so we must not
@@ -184,8 +193,11 @@ class Fetcher:
                 timeout=timeout,
                 trust_env=False,
             ) as client:
-                resp = await client.get(url, headers=headers)
+                resp = await client.get(url, headers=send_headers)
                 text = "" if screenshot else _safe_text(resp)
+                # ScraperAPI reports the final URL after following redirects here.
+                final_url = resp.headers.get("sa-final-url")
+                extra = {"final_url": final_url} if final_url else {}
                 return FetchResult(
                     status_code=resp.status_code,
                     headers=resp.headers,
@@ -195,6 +207,7 @@ class Fetcher:
                     tier_used=tier,
                     rendered=render or screenshot,
                     elapsed_ms=int((time.perf_counter() - start) * 1000),
+                    extra=extra,
                 )
         except httpx.HTTPError as exc:
             return FetchResult(

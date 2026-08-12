@@ -109,6 +109,27 @@ def from_javascript(html: str) -> Optional[str]:
     return None
 
 
+_OG_TITLE_RE = re.compile(
+    r"""<meta[^>]+(?:property|name)\s*=\s*["'](?:og:title|twitter:title)["'][^>]*content\s*=\s*["']([^"']+)["']""",
+    re.IGNORECASE,
+)
+_TITLE_RE = re.compile(r"<title[^>]*>\s*(.*?)\s*</title>", re.IGNORECASE | re.DOTALL)
+
+
+def page_title(html: str) -> Optional[str]:
+    """Best-effort human title of a page: og:title / twitter:title, else <title>."""
+    if not html:
+        return None
+    match = _OG_TITLE_RE.search(html)
+    if match:
+        return match.group(1).strip()[:120] or None
+    match = _TITLE_RE.search(html)
+    if match:
+        title = re.sub(r"\s+", " ", match.group(1)).strip()
+        return title[:120] or None
+    return None
+
+
 def find_next_url(
     *, base_url: str, text: str, content_type: str, refresh_header: Optional[str]
 ) -> Optional[Tuple[str, str]]:

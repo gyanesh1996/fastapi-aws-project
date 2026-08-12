@@ -135,6 +135,44 @@ The key is never baked into the image and `.env` is git-ignored + docker-ignored
 
 ---
 
+## Attribution links (Adjust, AppsFlyer, Branch, …)
+
+MMP smart links resolve to the store in ways plain redirect-following misses:
+
+- **Adjust** does a server-side `302`, but the `Location` depends on the device:
+  an **Android** UA gets an app-scheme link (`market://details?id=<pkg>` /
+  `intent://…`), a non-mobile UA gets the `https://play.google.com/...` URL.
+  App-scheme links aren't fetchable, so the engine parses the package out of them
+  and treats them as the terminal store destination. If the link instead serves a
+  `200` fingerprint page, the engine re-fetches with a neutral desktop UA to get
+  the clean `302`.
+- **AppsFlyer OneLink / Branch** return a `200` HTML page and pick the store
+  client-side; the store URLs live in the link's query (`af_android_url`,
+  `af_ios_url`) or an inline JSON blob (`$android_url`, `$ios_url`). The engine
+  extracts those directly.
+
+Resolution ladder for a stalled hop (cheapest first): app-scheme parse →
+query-param / page-source scan → neutral-UA re-fetch → headless render. Most MMP
+links resolve without any render at all. The destination package (`com.grad.def`)
+comes from the store URL's `id=` param and the app name from the store page's
+`og:title` (e.g. *Yami Star - Voice Chat*).
+
+## Client-side JavaScript redirects (e.g. `r.prmin.net`)
+
+Some links don't redirect over HTTP at all — they serve a *"Redirecting you to the
+store"* interstitial whose real destination is computed at runtime by JavaScript.
+Raw HTTP tracing can never resolve these; the target isn't in the HTML.
+
+When a hop stalls on a `200` interstitial, the engine runs a **headless-render
+pass** (residential tier, `render=true` + `follow_redirect=true`) that executes the
+JS, follows the whole client-side chain, and reads the final landing URL from
+ScraperAPI's **`sa-final-url`** response header. That's how a `prmin.net → ayetstudios`
+link resolves to the offerwall landing page and app name.
+
+> Note: render passes use `premium` (residential) and cost more credits
+> (`premium+render` = 25, `ultra+render` = 75). Datacenter render is intentionally
+> skipped because it's blocked on these domains (returns `499`).
+
 ## Limitations
 
 - ScraperAPI's rendered mode returns the final page, not a per-navigation trace, so
