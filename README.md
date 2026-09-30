@@ -1,185 +1,56 @@
-# Redirect Tracer
+# Health Shorts Agent
 
-A full affiliate / tracking-link redirect analyzer — an AffiliTest-style tool that
-follows a tracking URL through its **entire** chain (HTTP 3xx, meta-refresh,
-JavaScript/SDK redirects and JSON click responses), identifies the tracking
-platform at every hop (Adjust, AppsFlyer, Branch, Singular, Kochava, …) and
-extracts the final app-store destination.
+An AI agent that runs a YouTube Shorts channel about **lifestyle change for
+Indian people**: desi diet, movement for desk jobs, sleep, stress, and
+preventing lifestyle diseases like diabetes and BP.
 
-Egress is routed through **ScraperAPI** so requests come from real
-residential/geo IPs in the country you choose — the piece that makes protected
-ad-network links resolve instead of returning `403 Forbidden`.
-
----
-
-## Why the previous version returned `403 Forbidden`
-
-The old tool ran `httpx` directly from the AWS EC2 box and "spoofed" the country
-by setting `X-Forwarded-For` / `CF-Connecting-IP` headers.
-
-**Those headers do nothing against a real anti-bot system.** The origin server
-(`r.prmin.net`, Adjust, etc.) sees the actual TCP source IP — your AWS datacenter
-range — recognizes it as a non-residential/cloud IP, and blocks it on hop 1.
-`X-Forwarded-For` is only trusted when a server sits *behind* a proxy it already
-trusts; an origin treats a client-supplied value as noise (or a red flag).
-
-The only fix is to **change the real egress IP** to a residential/mobile IP in the
-target country. That's what this rebuild does via ScraperAPI proxy mode, and it's
-what AffiliTest does under the hood.
-
----
-
-## How it works
-
-For each hop the engine sends the request through ScraperAPI proxy mode:
+Every day it:
 
 ```
-http://scraperapi.follow_redirect=false.keep_headers=true.country_code=in.device_type=mobile:APIKEY@proxy-server.scraperapi.com:8001
+Trusted health sources ──► AI picks today's topic + writes the script (Hinglish)
+                                 │
+                                 ▼
+                 Poster image ──► Short video (poster + voiceover + captions)
+                                 │
+                                 ▼
+          Preview sent on Telegram: [Approve] [Reject] [Redo with feedback]
+                                 │ (approved)
+                                 ▼
+                     Uploaded to the YouTube channel
+                                 │
+                                 ▼
+          Views and watch time go back to the AI so it learns what works
 ```
 
-- `follow_redirect=false` → ScraperAPI returns the raw `301/302` + `Location`, so
-  **we** build the chain hop by hop instead of only seeing the final page.
-- `keep_headers=true` → our exact device User-Agent / client-hints / Accept-Language.
-- `country_code` → residential/geo egress for the selected country.
-- `premium` / `ultra_premium` → residential and hardened-anti-bot IPs.
-- `render=true` → only used as an escalation, to resolve a hop whose next step is
-  driven by JavaScript/SDK code that plain HTTP can't see.
+This project is also a hands-on way to learn AI, one concept per phase.
 
-Between hops the engine also parses each `200` body for `meta refresh`,
-`window.location`/`location.replace(...)`, `Refresh:` headers, and JSON
-`clickUrl`/`redirect` fields — the redirect mechanisms tracking links actually use.
+## Roadmap
 
-### Adaptive tier ladder (cost control)
+| Phase | What we build | AI concept |
+|---|---|---|
+| 0 | Repo, API keys, YouTube channel | Setup |
+| 1 | AI writes a daily topic as structured data (title, script, poster text, tags) | Prompting, structured output, tokens and cost |
+| 2 | Poster generator; the AI checks its own poster | Vision |
+| 3 | Shorts generator: poster + voiceover + captions → 9:16 video | Text-to-speech, multimodal pipelines |
+| 4 | Telegram approval bot | Human-in-the-loop |
+| 5 | YouTube upload | OAuth, YouTube Data API |
+| 6 | Turn the pipeline into an agent that picks its own steps | Tool use, agent loops |
+| 7 | Knowledge library + past performance; no repeated topics | Grounding / RAG, memory, evaluation |
+| 8 | Runs daily on AWS | Scheduling, deployment |
 
-With `PROXY_TIER=auto` (default) each hop starts on cheap datacenter proxies and
-only escalates when it sees a block (`403/429/503/...`):
+## Content rules
 
-`datacenter (1 credit)` → `residential (10)` → `ultra-premium (30)`
-
-Set `PROXY_TIER=premium` to force residential on every hop when you know the
-network blocks datacenter IPs (most ad networks do).
-
----
+- **Language:** Hinglish (everyday Hindi + English, Roman script).
+- **Grounded:** every fact must come from a trusted source, such as the
+  ICMR-NIN Dietary Guidelines for Indians, WHO, NFHS, or FSSAI Eat Right India.
+  The source is stored with each video.
+- **Safe:** no treatment or medicine advice. Every video carries a
+  "not medical advice" line. A human approves every post.
+- **Varied formats** (Myth vs Fact, Swap This for That, One Habit a Day,
+  Desi Plate Breakdown, 30-Day Challenge), so the channel doesn't look
+  mass-produced.
 
 ## Setup
 
-```bash
-pip install -r requirements.txt
-cp .env.example .env          # then paste your ScraperAPI key into .env
-uvicorn app.main:app --reload
-# open http://localhost:8000
-```
-
-Environment variables (see `.env.example`):
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `SCRAPERAPI_KEY` | _(empty)_ | Your ScraperAPI key. Empty ⇒ **direct mode** (open links only; ad networks 403). |
-| `PROXY_TIER` | `auto` | `auto` \| `basic` \| `premium` \| `ultra` |
-| `ENABLE_RENDER_ESCALATION` | `true` | Headless-render a stalled hop to resolve JS/SDK redirects |
-| `MAX_HOPS` | `25` | Safety cap on chain length |
-| `REQUEST_TIMEOUT` / `RENDER_TIMEOUT` | `40` / `80` | Per-request timeouts (seconds) |
-
----
-
-## ⚠️ ScraperAPI plan requirements (important for India)
-
-- **Country-level geotargeting (`country_code=in`, `us`, `gb`, …) requires a
-  ScraperAPI Business plan or higher.** Hobby / Startup plans only support
-  **US and EU** region targeting — individual country codes like **India are not
-  available** on those tiers, so a "India" trace would silently egress from a
-  different region.
-- `premium=true` (residential) and `ultra_premium=true` credits are consumed fast
-  (10 / 30 credits per request). Watch your credit balance when tracing long
-  chains — a 15-hop link on forced residential is ~150 credits.
-
-If your current plan doesn't include India geotargeting, either upgrade to
-Business, or test with `US` first to confirm the pipeline end-to-end.
-
----
-
-## API
-
-| Endpoint | Description |
-|---|---|
-| `GET /` | The web UI |
-| `GET /health` | Liveness probe |
-| `GET /api/config` | Non-secret runtime config (engine, countries, tier) for the UI |
-| `GET /api/trace?url=&device=&country=&tier=&screenshot=` | Trace a link. `device` = `desktop\|android\|ios`; `country` = ISO code; returns the full chain, platforms, and destination |
-| `GET /api/egress-ip?country=` | Report the real proxy exit IP for a country (verifies geo egress) |
-
-Example:
-
-```bash
-curl "http://localhost:8000/api/trace?url=https://r.prmin.net/o/out?uh=...&device=android&country=IN&tier=premium"
-```
-
----
-
-## Deployment (AWS ECR + EC2)
-
-The existing GitHub Actions pipeline (`.github/workflows/deploy.yml`) builds the
-image, pushes to ECR, and runs it on EC2. It now passes the key at runtime:
-
-```
-docker run -d -p 80:8000 --name fastapi-app --restart always \
-  -e SCRAPERAPI_KEY='***' -e PROXY_TIER='auto' <image>
-```
-
-Add these **GitHub repository secrets** so the deploy injects them:
-
-- `SCRAPERAPI_KEY` — your key
-- `PROXY_TIER` — e.g. `auto` or `premium`
-
-The key is never baked into the image and `.env` is git-ignored + docker-ignored.
-
----
-
-## Attribution links (Adjust, AppsFlyer, Branch, …)
-
-MMP smart links resolve to the store in ways plain redirect-following misses:
-
-- **Adjust** does a server-side `302`, but the `Location` depends on the device:
-  an **Android** UA gets an app-scheme link (`market://details?id=<pkg>` /
-  `intent://…`), a non-mobile UA gets the `https://play.google.com/...` URL.
-  App-scheme links aren't fetchable, so the engine parses the package out of them
-  and treats them as the terminal store destination. If the link instead serves a
-  `200` fingerprint page, the engine re-fetches with a neutral desktop UA to get
-  the clean `302`.
-- **AppsFlyer OneLink / Branch** return a `200` HTML page and pick the store
-  client-side; the store URLs live in the link's query (`af_android_url`,
-  `af_ios_url`) or an inline JSON blob (`$android_url`, `$ios_url`). The engine
-  extracts those directly.
-
-Resolution ladder for a stalled hop (cheapest first): app-scheme parse →
-query-param / page-source scan → neutral-UA re-fetch → headless render. Most MMP
-links resolve without any render at all. The destination package (`com.grad.def`)
-comes from the store URL's `id=` param and the app name from the store page's
-`og:title` (e.g. *Yami Star - Voice Chat*).
-
-## Client-side JavaScript redirects (e.g. `r.prmin.net`)
-
-Some links don't redirect over HTTP at all — they serve a *"Redirecting you to the
-store"* interstitial whose real destination is computed at runtime by JavaScript.
-Raw HTTP tracing can never resolve these; the target isn't in the HTML.
-
-When a hop stalls on a `200` interstitial, the engine runs a **headless-render
-pass** (residential tier, `render=true` + `follow_redirect=true`) that executes the
-JS, follows the whole client-side chain, and reads the final landing URL from
-ScraperAPI's **`sa-final-url`** response header. That's how a `prmin.net → ayetstudios`
-link resolves to the offerwall landing page and app name.
-
-> Note: render passes use `premium` (residential) and cost more credits
-> (`premium+render` = 25, `ultra+render` = 75). Datacenter render is intentionally
-> skipped because it's blocked on these domains (returns `499`).
-
-## Limitations
-
-- ScraperAPI's rendered mode returns the final page, not a per-navigation trace, so
-  a chain that is *entirely* driven by in-browser JS is captured as
-  "hop → (rendered) → destination" rather than each intermediate JS bounce. HTTP,
-  meta-refresh, `Refresh` header and simple `location` JS hops are captured
-  individually.
-- Destination app-name extraction is best-effort from the store URL (package name
-  for Google Play; app id + slug for the App Store).
-- Direct mode (no key) exists for local testing and open links only.
+Coming in Phase 1. Copy `.env.example` to `.env` and add your keys. Never
+commit `.env`.

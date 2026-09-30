@@ -1,5 +1,10 @@
-# Secrets — never commit your ScraperAPI key
+# Secrets — never commit keys or Google OAuth files
 .env
+client_secret*.json
+token.json
+
+# Generated posters and videos
+output/
 
 # Python
 __pycache__/
@@ -8,7 +13,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
-env/
 
 # OS / editor
 .DS_Store
