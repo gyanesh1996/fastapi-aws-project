@@ -44,8 +44,12 @@ class ShortContent(BaseModel):
     hook: str = Field(description="First line spoken in the first 2 seconds, Roman Hinglish, makes people stop scrolling")
     poster_title: str = Field(description="Big poster heading, Roman Hinglish, at most 6 words")
     poster_points: list[str] = Field(description="Exactly 3 short poster points, Roman Hinglish, at most 8 words each")
-    script_hinglish: str = Field(description="Voiceover for 20-30 seconds (55-75 words), Roman Hinglish, written for speaking")
-    script_devanagari: str = Field(description="The same voiceover written in Devanagari, for a Hindi AI voice")
+    script_hinglish: str = Field(
+        description="Voiceover for 20-30 seconds (55-75 words), Roman Hinglish, written for speaking. Starts with the hook line"
+    )
+    script_devanagari: str = Field(
+        description="The same voiceover written in Devanagari, for a Hindi AI voice"
+    )
     youtube_title: str = Field(description="YouTube title, under 70 characters, Hinglish")
     youtube_description: str = Field(description="2-3 lines in Hinglish. No sources or disclaimer; those are added automatically")
     hashtags: list[str] = Field(description="3-5 hashtags without spaces, including #shorts")

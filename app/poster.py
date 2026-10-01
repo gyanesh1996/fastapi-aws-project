@@ -80,11 +80,11 @@ def plan_layout(draw, title: str, points: list[str], footer_height: int, scale: 
     }
 
 
-def fit_layout(draw, title: str, points: list[str], footer_height: int) -> dict:
+def fit_layout(draw, title: str, points: list[str], footer_height: int, content_bottom: int) -> dict:
     """Biggest text size at which everything fits in the safe area."""
     for step in range(0, 9):
         layout = plan_layout(draw, title, points, footer_height, 1.0 - step * 0.05)
-        if layout["total"] <= CONTENT_BOTTOM - CONTENT_TOP and len(layout["title_lines"]) <= 4:
+        if layout["total"] <= content_bottom - CONTENT_TOP and len(layout["title_lines"]) <= 4:
             return layout
     return layout  # smallest size; the review will flag it if it's still too much
 
@@ -98,7 +98,8 @@ def gradient(top: tuple, bottom: tuple) -> Image.Image:
     return img
 
 
-def render_poster(content: dict, source_line: str) -> Image.Image:
+def render_poster(content: dict, source_line: str, content_bottom: int = CONTENT_BOTTOM) -> Image.Image:
+    """content_bottom: lower edge for the poster's content (the video version keeps room for captions below it)."""
     top, bottom = PILLAR_COLORS.get(content["pillar"], PILLAR_COLORS["diet"])
     img = gradient(top, bottom)
     draw = ImageDraw.Draw(img, "RGBA")
@@ -119,7 +120,7 @@ def render_poster(content: dict, source_line: str) -> Image.Image:
 
     source_lines = wrap(draw, source_line, font("Medium", 30), W - 2 * MARGIN) if source_line else []
     footer_height = len(source_lines) * 44 + 48
-    layout = fit_layout(draw, content["poster_title"], content["poster_points"], footer_height)
+    layout = fit_layout(draw, content["poster_title"], content["poster_points"], footer_height, content_bottom)
     y = CONTENT_TOP
     for line in layout["title_lines"]:
         draw.text((MARGIN, y), line, font=layout["title_font"], fill="white")
@@ -180,6 +181,12 @@ def missing_words(content: dict, text_seen: str) -> list[str]:
     return [w for w in expected if w not in seen]
 
 
+def source_line_for(content: dict) -> str:
+    notes = load_notes()
+    names = [notes[s["note_id"]].source.split(",")[0] for s in content.get("sources", []) if s.get("note_id") in notes]
+    return "Source: " + "; ".join(dict.fromkeys(names)) if names else ""
+
+
 def latest_draft() -> Path:
     drafts = sorted(DRAFTS_DIR.glob("*.json"))
     if not drafts:
@@ -194,11 +201,7 @@ def main() -> None:
     draft = json.loads(draft_path.read_text(encoding="utf-8"))
     content = draft["content"]
 
-    notes = load_notes()
-    names = [notes[s["note_id"]].source.split(",")[0] for s in content.get("sources", []) if s.get("note_id") in notes]
-    source_line = "Source: " + "; ".join(dict.fromkeys(names)) if names else ""
-
-    img = render_poster(content, source_line)
+    img = render_poster(content, source_line_for(content))
     POSTERS_DIR.mkdir(parents=True, exist_ok=True)
     poster_path = POSTERS_DIR / f"{draft_path.stem}.png"
     img.save(poster_path)

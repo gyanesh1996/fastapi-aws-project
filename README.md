@@ -118,3 +118,39 @@ about ₹0.80.
 | [app/poster.py](app/poster.py) | Draws the poster (Pillow), sends it to Claude to check, saves the result into the draft |
 | [prompts/poster_review.md](prompts/poster_review.md) | What Claude checks when it looks at a poster |
 | [assets/fonts/](assets/fonts/) | Poppins font (free, SIL Open Font License) |
+
+## Phase 3: the Short video
+
+```powershell
+python -m app.video                                  # newest draft, free AI voice
+python -m app.video --voice my-recording.m4a         # use your own recording instead
+python -m app.video output/drafts/some-draft.json    # a specific draft
+```
+
+The video (1080×1920, 30 fps, MP4) has two parts:
+
+1. **Intro:** the hook in big letters while the voice says it.
+2. **Poster:** slowly zooming in, with captions of what's being said underneath.
+
+**Voice:**
+- By default it's the free Microsoft AI voice (edge-tts) reading the
+  Devanagari script, so Hindi words sound right. Change it with
+  `TTS_VOICE` in `.env`.
+- With `--voice`, it uses your recording instead. Record the Hinglish
+  script on your phone in any format (m4a, mp3, ogg, wav). Silence at the
+  start and end is cut, background noise is reduced, and the volume is set
+  to YouTube's loudness level.
+
+**Captions:** the script is split into short phrases. FFmpeg listens for the
+pauses in the voice, and each phrase is timed to the speaking parts in
+proportion to its length.
+
+**Music (optional):** put `.mp3` files in `assets/music/`, for example from the
+YouTube Audio Library in YouTube Studio. One is picked at random and mixed in
+quietly under the voice. The folder isn't in git.
+
+Videos are saved in `output/videos/`. Building one takes about a minute.
+
+| File | What it does |
+|---|---|
+| [app/video.py](app/video.py) | Makes the voice, times the captions, draws every frame and hands them to FFmpeg |

@@ -21,3 +21,6 @@ venv/
 
 # Downloaded source documents (large; re-download with the links in knowledge/README.md)
 knowledge/sources/
+
+# Background music you download (YouTube Audio Library licences don't allow re-sharing the files)
+assets/music/
