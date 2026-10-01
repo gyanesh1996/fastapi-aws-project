@@ -93,3 +93,28 @@ repeat itself.
 | [app/search.py](app/search.py) | Step 1: Claude Haiku (fast, cheap) picks the notes this idea needs |
 | [app/writer.py](app/writer.py) | Step 2: Claude Opus writes the Short from those notes; checks, prints and saves the draft |
 | [app/costs.py](app/costs.py) | Works out what each Claude call cost |
+
+## Phase 2: the Poster
+
+```powershell
+python -m app.poster                                  # poster for the newest draft
+python -m app.poster output/drafts/some-draft.json    # poster for a specific draft
+python -m app.poster --no-review                      # skip Claude's check (free)
+```
+
+It draws a 1080×1920 poster (the size of a Short) from the draft's title and
+3 points, in the pillar's colour, with the source and a "medical advice nahi"
+line. Text sizes shrink automatically until everything fits above the area
+YouTube covers with its buttons and title. The poster is saved in
+`output/posters/`.
+
+Then Claude looks at the poster at half size, roughly what a viewer sees on a
+phone. It writes out every word it can read and lists any problems, and code
+checks that every word of the title and points was readable. One check costs
+about ₹0.80.
+
+| File | What it does |
+|---|---|
+| [app/poster.py](app/poster.py) | Draws the poster (Pillow), sends it to Claude to check, saves the result into the draft |
+| [prompts/poster_review.md](prompts/poster_review.md) | What Claude checks when it looks at a poster |
+| [assets/fonts/](assets/fonts/) | Poppins font (free, SIL Open Font License) |

@@ -27,6 +27,16 @@ class FactCheck(BaseModel):
     notes: str = Field(description="For the channel owner, in simple English: what was checked, what changed and why")
 
 
+class PosterReview(BaseModel):
+    """What Claude reports after looking at a poster."""
+    text_seen: str = Field(description="Every word you can read in the image, top to bottom, exactly as written")
+    readable_on_phone: bool
+    issues: list[str] = Field(
+        description="Real problems only: cut-off or overlapping text, low contrast, odd characters or boxes, cramped layout"
+    )
+    verdict: Literal["good", "fix_needed"]
+
+
 class ShortContent(BaseModel):
     topic: str = Field(description="Short topic name in English, used to avoid repeats")
     pillar: Literal["diet", "movement", "sleep", "stress", "prevention"]
