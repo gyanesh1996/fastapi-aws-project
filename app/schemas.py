@@ -1,20 +1,27 @@
-"""The exact shape of one Short. Claude must reply in this shape (structured output)."""
+"""The exact shapes Claude must reply in (structured output)."""
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
+class NotePick(BaseModel):
+    """What the library search returns."""
+    topic: str = Field(description="Today's topic in plain English")
+    note_ids: list[str] = Field(description="ids of the library notes the writer will need, most relevant first")
+
+
 class Source(BaseModel):
-    name: str = Field(description="Trusted source, e.g. 'ICMR-NIN Dietary Guidelines for Indians'")
-    supports: str = Field(description="What this source says that backs the Short, in plain English")
+    note_id: str = Field(description="id of the library note this fact comes from")
+    quote: str = Field(description="The exact words copied from that note that back the Short")
 
 
 class FactCheck(BaseModel):
-    verdict: Literal["supported", "softened", "not_supported"] = Field(
+    verdict: Literal["supported", "softened", "not_supported", "no_source"] = Field(
         description=(
             "supported = the idea is correct as given; "
             "softened = partly right, wording was made more accurate; "
-            "not_supported = the idea is wrong or unsafe, so a close safe topic was written instead"
+            "not_supported = the idea is wrong or unsafe, so a close safe topic was written instead; "
+            "no_source = the library has nothing on this idea, so a close topic the library supports was written instead"
         )
     )
     notes: str = Field(description="For the channel owner, in simple English: what was checked, what changed and why")
@@ -30,7 +37,7 @@ class ShortContent(BaseModel):
     script_hinglish: str = Field(description="Voiceover for 20-30 seconds (55-75 words), Roman Hinglish, written for speaking")
     script_devanagari: str = Field(description="The same voiceover written in Devanagari, for a Hindi AI voice")
     youtube_title: str = Field(description="YouTube title, under 70 characters, Hinglish")
-    youtube_description: str = Field(description="2-3 lines in Hinglish, then 'Source: ...' on its own line")
+    youtube_description: str = Field(description="2-3 lines in Hinglish. No sources or disclaimer; those are added automatically")
     hashtags: list[str] = Field(description="3-5 hashtags without spaces, including #shorts")
     sources: list[Source]
     fact_check: FactCheck

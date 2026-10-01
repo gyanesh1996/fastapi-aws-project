@@ -31,6 +31,7 @@ This project is also a hands-on way to learn AI, one concept per phase.
 |---|---|---|
 | 0 | Repo, API keys, YouTube channel | Setup |
 | 1 | Writer: AI writes content, and turns your text ideas into simple Hinglish + fact-checks them | Prompting, structured output |
+| 1b | Knowledge library: the Writer may only use facts from trusted notes, and code checks every quote. A cheap model first picks the notes each idea needs | Grounding, RAG |
 | 2 | Poster generator; the AI checks its own poster | Vision |
 | 3 | Short video: your voice or AI voice + captions + music | Text-to-speech, speech-to-text |
 | 4 | Telegram approval; send ideas and voice recordings from your phone | Human-in-the-loop |
@@ -39,16 +40,16 @@ This project is also a hands-on way to learn AI, one concept per phase.
 | 7 | Admin login + dashboard (website visitors, YouTube stats, content, AI cost) | Security, analytics |
 | 8 | Go live: Cloudflare domain + HTTPS → AWS EC2, runs daily | DNS, deployment |
 | 9 | Turn the pipeline into an agent that picks its own steps | Tool use, agent loops |
-| 10 | Learning loop from stats; no repeated topics | Grounding / RAG, memory, evaluation |
+| 10 | Learning loop from stats; embeddings search once the library grows large | Embeddings, memory, evaluation |
 
 ## Content rules
 
 - **Language:** Hinglish (everyday Hindi + English, Roman script).
 - **Simple for everyone:** short sentences, everyday words, desi examples,
   cheap and practical tips. Written for people who aren't health experts.
-- **Grounded:** every fact must come from a trusted source, such as the
-  ICMR-NIN Dietary Guidelines for Indians, WHO, NFHS, or FSSAI Eat Right India.
-  The source is stored with each post. Your own ideas are fact-checked the same way.
+- **Grounded:** every fact must come from the [knowledge library](knowledge/README.md)
+  (ICMR-NIN Dietary Guidelines for Indians 2024 and WHO fact sheets), quoted
+  word-for-word and checked by code. Your own ideas are fact-checked the same way.
 - **Safe:** no treatment or medicine advice. Every video carries a
   "not medical advice" line. A human approves every post.
 - **Varied formats** (Myth vs Fact, Swap This for That, One Habit a Day,
@@ -73,15 +74,22 @@ Never commit `.env`.
 ```powershell
 python -m app.writer "maida is poison, always eat atta roti"   # your idea
 python -m app.writer                                           # Claude picks a topic
+python -m app.search "namkeen aur papad roz khana"             # only see which notes the search picks
 ```
 
 It prints the hook, poster text, script (Hinglish + Devanagari), YouTube
-title, sources, a fact-check, and the cost of the call. Each draft is saved
-in `output/drafts/`, and Claude reads past topics from there so it doesn't
+title and description, the library quotes it used, a grounding check, a
+fact-check, and the cost of the call. Each draft is saved in
+`output/drafts/`, and Claude reads past topics from there so it doesn't
 repeat itself.
 
 | File | What it does |
 |---|---|
 | [prompts/writer_system.md](prompts/writer_system.md) | The instructions Claude follows: audience, language, safety. Edit this to change how it writes |
+| [knowledge/notes/](knowledge/notes/) | The trusted facts Claude may use (see [knowledge/README.md](knowledge/README.md)) |
 | [app/schemas.py](app/schemas.py) | The exact fields Claude must return (structured output) |
-| [app/writer.py](app/writer.py) | Sends the request, checks the reply, prints and saves the draft |
+| [app/knowledge.py](app/knowledge.py) | Loads the notes and checks Claude's quotes against them |
+| [prompts/search_system.md](prompts/search_system.md) | Instructions for the library search |
+| [app/search.py](app/search.py) | Step 1: Claude Haiku (fast, cheap) picks the notes this idea needs |
+| [app/writer.py](app/writer.py) | Step 2: Claude Opus writes the Short from those notes; checks, prints and saves the draft |
+| [app/costs.py](app/costs.py) | Works out what each Claude call cost |

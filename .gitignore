@@ -18,3 +18,6 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# Downloaded source documents (large; re-download with the links in knowledge/README.md)
+knowledge/sources/

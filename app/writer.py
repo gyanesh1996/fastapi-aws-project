@@ -1,5 +1,9 @@
 """Station 1, the Writer: turns a text idea (or no idea) into one Short's content.
 
+It works in two steps (RAG):
+  1. Search: a cheap model picks the library notes this idea needs (app/search.py).
+  2. Write: Claude writes the Short using only those notes, quoting them.
+
 Run:  python -m app.writer "your idea"     (or no idea, and Claude picks a topic)
 """
 import json
@@ -10,13 +14,12 @@ from datetime import datetime
 import anthropic
 
 from app.config import DRAFTS_DIR, MODEL, PROMPTS_DIR
+from app.costs import USD_TO_INR, call_usage, describe
+from app.knowledge import Note, check_quotes, library_prompt, load_notes
 from app.schemas import ShortContent
+from app.search import pick_notes
 
-# USD per million tokens: (input, output). Check platform.claude.com pricing if these change.
-PRICES = {"claude-opus-5-5": (4.00, 20.00), "claude-sonnet-5-5": (2.00, 10.00)}
-USD_TO_INR = 88
-
-SYSTEM_PROMPT = (PROMPTS_DIR / "writer_system.md").read_text(encoding="utf-8")
+DISCLAIMER = "Yeh jaankari sirf general awareness ke liye hai, medical advice nahi. Koi bimari ho to doctor se baat karein."
 
 
 def past_topics(limit: int = 30) -> list[str]:
@@ -25,9 +28,11 @@ def past_topics(limit: int = 30) -> list[str]:
     return [json.loads(f.read_text(encoding="utf-8"))["content"]["topic"] for f in files]
 
 
-def build_request(idea: str | None, avoid: list[str]) -> str:
+def build_request(idea: str | None, topic: str | None, avoid: list[str]) -> str:
     if idea:
         request = f"Idea from the channel owner:\n<idea>\n{idea}\n</idea>"
+    elif topic:
+        request = f"No idea from the channel owner today. Today's topic, chosen from the library: {topic}"
     else:
         request = "No idea from the channel owner today. Pick a useful topic yourself."
     if avoid:
@@ -35,9 +40,18 @@ def build_request(idea: str | None, avoid: list[str]) -> str:
     return request
 
 
-def write_short(idea: str | None = None, client: anthropic.Anthropic | None = None) -> tuple[ShortContent, dict]:
-    """Ask Claude for one Short. Returns the content and a usage/cost summary."""
+def write_short(idea: str | None = None, client: anthropic.Anthropic | None = None) -> dict:
+    """Search the library, then write one Short. Returns everything needed to review and save it."""
     client = client or anthropic.Anthropic()
+    notes = load_notes()
+    avoid = past_topics()
+
+    # Step 1: search. If it fails or finds nothing, fall back to the whole library (costs more, but still grounded).
+    pick, search_usage = pick_notes(idea, avoid, notes, client)
+    selected = {i: notes[i] for i in pick.note_ids} if pick and pick.note_ids else notes
+
+    # Step 2: write, with only the selected notes in the prompt.
+    system_prompt = (PROMPTS_DIR / "writer_system.md").read_text(encoding="utf-8") + "\n\n" + library_prompt(selected)
     response = client.beta.messages.parse(
         model=MODEL,
         max_tokens=16000,
@@ -45,41 +59,57 @@ def write_short(idea: str | None = None, client: anthropic.Anthropic | None = No
         # If a safety check declines the request, Anthropic retries it on a fallback model.
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": build_request(idea, past_topics())}],
+        system=system_prompt,
+        messages=[{"role": "user", "content": build_request(idea, pick.topic if pick else None, avoid)}],
         output_format=ShortContent,
     )
     if response.stop_reason == "refusal":
         raise RuntimeError(f"Claude declined this idea: {response.stop_details}")
 
-    usage = {
-        "model": response.model,
-        "input_tokens": response.usage.input_tokens,
-        "output_tokens": response.usage.output_tokens,
+    content = response.parsed_output
+    steps = [search_usage, call_usage("write", response)]
+    return {
+        "content": content,
+        "notes_sent": list(selected),
+        "notes_total": len(notes),
+        "usage": {"steps": steps, "total_cost_usd": round(sum(s.get("cost_usd", 0) for s in steps), 4)},
+        "problems": check_quotes(content.sources, notes),
     }
-    if response.model in PRICES:
-        in_price, out_price = PRICES[response.model]
-        usage["cost_usd"] = round(
-            (usage["input_tokens"] * in_price + usage["output_tokens"] * out_price) / 1_000_000, 4
-        )
-    return response.parsed_output, usage
 
 
-def save_draft(content: ShortContent, usage: dict, idea: str | None) -> str:
+def source_names(content: ShortContent, notes: dict[str, Note]) -> list[str]:
+    """'ICMR-NIN Dietary Guidelines for Indians 2024, Guideline 15, PDF p. 111' -> the document name."""
+    names = [notes[s.note_id].source.split(",")[0] for s in content.sources if s.note_id in notes]
+    return list(dict.fromkeys(names))
+
+
+def full_description(content: ShortContent, notes: dict[str, Note]) -> str:
+    sources = "; ".join(source_names(content, notes))
+    return f"{content.youtube_description}\n\nSource: {sources}\n{DISCLAIMER}"
+
+
+def save_draft(result: dict, idea: str | None) -> str:
+    content = result["content"]
     DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
     slug = re.sub(r"[^a-z0-9]+", "-", content.topic.lower()).strip("-")[:40]
     path = DRAFTS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}-{slug}.json"
     draft = {
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "idea": idea,
-        "usage": usage,
+        "notes_sent": result["notes_sent"],
+        "usage": result["usage"],
+        "grounding_problems": result["problems"],
+        "youtube_description_full": full_description(content, load_notes()),
         "content": content.model_dump(),
     }
     path.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(path)
 
 
-def print_draft(c: ShortContent, usage: dict) -> None:
+def print_draft(result: dict) -> None:
+    c, problems, notes = result["content"], result["problems"], load_notes()
+    print(f"\nLIBRARY SEARCH: sent {len(result['notes_sent'])} of {result['notes_total']} notes to the writer")
+    print("  " + ", ".join(result["notes_sent"]))
     print(f"\nTOPIC: {c.topic}   [{c.pillar} / {c.format}]")
     print(f"\nHOOK: {c.hook}")
     print(f"\nPOSTER: {c.poster_title}")
@@ -88,15 +118,24 @@ def print_draft(c: ShortContent, usage: dict) -> None:
     print(f"\nSCRIPT (Hinglish):\n{c.script_hinglish}")
     print(f"\nSCRIPT (Devanagari):\n{c.script_devanagari}")
     print(f"\nYOUTUBE TITLE: {c.youtube_title}")
-    print(f"DESCRIPTION:\n{c.youtube_description}")
+    print(f"DESCRIPTION:\n{full_description(c, notes)}")
     print(f"HASHTAGS: {' '.join(c.hashtags)}")
     print("\nSOURCES:")
     for s in c.sources:
-        print(f"  - {s.name}: {s.supports}")
+        where = notes[s.note_id].source if s.note_id in notes else "UNKNOWN NOTE"
+        print(f"  - [{s.note_id}] {where}\n    \"{s.quote}\"")
+    if problems:
+        print("\nGROUNDING CHECK: PROBLEMS - don't post until these are fixed:")
+        for p in problems:
+            print(f"  - {p}")
+    else:
+        print(f"\nGROUNDING CHECK: OK - all {len(c.sources)} quotes found word-for-word in the library")
     print(f"\nFACT-CHECK: {c.fact_check.verdict.upper()}\n{c.fact_check.notes}")
-    cost = usage.get("cost_usd")
-    cost_text = f"${cost} (about Rs {cost * USD_TO_INR:.2f})" if cost is not None else "unknown"
-    print(f"\nTOKENS: {usage['input_tokens']} in, {usage['output_tokens']} out | COST: {cost_text} | MODEL: {usage['model']}")
+    print("\nCOST:")
+    for step in result["usage"]["steps"]:
+        print(f"  {describe(step)}")
+    total = result["usage"]["total_cost_usd"]
+    print(f"  total: ${total} (about Rs {total * USD_TO_INR:.2f})")
 
 
 def main() -> None:
@@ -104,15 +143,15 @@ def main() -> None:
     idea = " ".join(sys.argv[1:]).strip() or None
     print("Writing a Short" + (f" from your idea: {idea!r}" if idea else " on a topic Claude picks") + " ...")
     try:
-        content, usage = write_short(idea)
+        result = write_short(idea)
     except anthropic.AuthenticationError:
         sys.exit("Your API key was rejected. Check ANTHROPIC_API_KEY in .env.")
     except anthropic.RateLimitError:
         sys.exit("Rate limit or spend limit reached. Check Settings > Billing in the Claude Console.")
     except anthropic.APIConnectionError:
         sys.exit("Couldn't reach the Claude API. Check your internet connection.")
-    print_draft(content, usage)
-    print(f"\nSaved: {save_draft(content, usage, idea)}")
+    print_draft(result)
+    print(f"\nSaved: {save_draft(result, idea)}")
 
 
 if __name__ == "__main__":
