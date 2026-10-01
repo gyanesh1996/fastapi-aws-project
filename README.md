@@ -57,7 +57,31 @@ This project is also a hands-on way to learn AI, one concept per phase.
 - **Human voice first:** your own recording when possible; a natural AI voice
   only as a fallback.
 
-## Setup
+## Setup (Windows PowerShell)
 
-Coming in Phase 1. Copy `.env.example` to `.env` and add your keys. Never
-commit `.env`.
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+Copy-Item .env.example .env      # then paste your Claude API key into .env
+```
+
+Never commit `.env`.
+
+## Phase 1: the Writer
+
+```powershell
+python -m app.writer "maida is poison, always eat atta roti"   # your idea
+python -m app.writer                                           # Claude picks a topic
+```
+
+It prints the hook, poster text, script (Hinglish + Devanagari), YouTube
+title, sources, a fact-check, and the cost of the call. Each draft is saved
+in `output/drafts/`, and Claude reads past topics from there so it doesn't
+repeat itself.
+
+| File | What it does |
+|---|---|
+| [prompts/writer_system.md](prompts/writer_system.md) | The instructions Claude follows: audience, language, safety. Edit this to change how it writes |
+| [app/schemas.py](app/schemas.py) | The exact fields Claude must return (structured output) |
+| [app/writer.py](app/writer.py) | Sends the request, checks the reply, prints and saves the draft |
