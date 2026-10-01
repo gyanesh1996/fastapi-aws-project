@@ -194,10 +194,8 @@ def latest_draft() -> Path:
     return drafts[-1]
 
 
-def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    draft_path = Path(args[0]) if args else latest_draft()
+def make_poster(draft_path: Path, review: bool = True) -> dict:
+    """Draw the poster for a draft, optionally have Claude check it, and record the result in the draft."""
     draft = json.loads(draft_path.read_text(encoding="utf-8"))
     content = draft["content"]
 
@@ -205,27 +203,41 @@ def main() -> None:
     POSTERS_DIR.mkdir(parents=True, exist_ok=True)
     poster_path = POSTERS_DIR / f"{draft_path.stem}.png"
     img.save(poster_path)
-    print(f"Poster saved: {poster_path}")
-    draft["poster"] = {"path": str(poster_path)}
+    info = {"path": str(poster_path)}
 
-    if "--no-review" not in sys.argv:
-        print("Claude is checking the poster ...")
-        review, usage = review_poster(img, anthropic.Anthropic())
-        if review is None:
-            print("The review didn't return a result.")
-        else:
-            missing = missing_words(content, review.text_seen)
-            print(f"\nREVIEW: {review.verdict.upper()}  (readable on a phone: {'yes' if review.readable_on_phone else 'NO'})")
-            for issue in review.issues:
-                print(f"  - {issue}")
-            if missing:
-                print(f"TEXT CHECK: Claude couldn't read these words: {', '.join(missing)}")
-            else:
-                print("TEXT CHECK: OK - Claude read every word of the title and points")
-            print(f"\nCOST: {describe(usage)}")
-            draft["poster"].update(review=review.model_dump(), missing_words=missing, usage=usage)
+    if review:
+        result, usage = review_poster(img, anthropic.Anthropic())
+        info["usage"] = usage
+        if result is not None:
+            info.update(review=result.model_dump(), missing_words=missing_words(content, result.text_seen))
 
+    draft["poster"] = info
     draft_path.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
+    return info
+
+
+def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8")
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    review = "--no-review" not in sys.argv
+    if review:
+        print("Drawing the poster, then Claude checks it ...")
+    info = make_poster(Path(args[0]) if args else latest_draft(), review=review)
+    print(f"Poster saved: {info['path']}")
+    if not review:
+        return
+    if "review" not in info:
+        print("The review didn't return a result.")
+        return
+    r = info["review"]
+    print(f"\nREVIEW: {r['verdict'].upper()}  (readable on a phone: {'yes' if r['readable_on_phone'] else 'NO'})")
+    for issue in r["issues"]:
+        print(f"  - {issue}")
+    if info["missing_words"]:
+        print(f"TEXT CHECK: Claude couldn't read these words: {', '.join(info['missing_words'])}")
+    else:
+        print("TEXT CHECK: OK - Claude read every word of the title and points")
+    print(f"\nCOST: {describe(info['usage'])}")
 
 
 if __name__ == "__main__":

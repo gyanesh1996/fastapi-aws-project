@@ -230,37 +230,40 @@ def build_video(content: dict, voice_wav: Path, out_path: Path) -> dict:
             "captions": len(captions)}
 
 
-def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")
-    args = sys.argv[1:]
-    own_voice = Path(args[args.index("--voice") + 1]) if "--voice" in args else None
-    drafts = [a for a in args if a.endswith(".json")]
-    draft_path = Path(drafts[0]) if drafts else latest_draft()
+def make_video(draft_path: Path, own_voice: Path | None = None) -> dict:
+    """Make the video for a draft (AI voice, or own_voice if given) and record it in the draft."""
     draft = json.loads(draft_path.read_text(encoding="utf-8"))
     content = draft["content"]
 
     with tempfile.TemporaryDirectory() as tmp:
         voice_wav = Path(tmp) / "voice.wav"
         if own_voice:
-            print(f"Using your recording: {own_voice}")
             prepare_voice(own_voice, voice_wav, own_recording=True)
             voice_label = f"own:{own_voice.name}"
         else:
-            print(f"Making the AI voice ({TTS_VOICE}) ...")
             raw = Path(tmp) / "voice.mp3"
             make_ai_voice(content["script_devanagari"], raw)
             prepare_voice(raw, voice_wav, own_recording=False)
             voice_label = f"ai:{TTS_VOICE}"
-
         VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-        print("Building the video ...")
         info = build_video(content, voice_wav, VIDEOS_DIR / f"{draft_path.stem}.mp4")
 
     info["voice"] = voice_label
     draft["video"] = info
     draft_path.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
+    return info
+
+
+def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8")
+    args = sys.argv[1:]
+    own_voice = Path(args[args.index("--voice") + 1]) if "--voice" in args else None
+    drafts = [a for a in args if a.endswith(".json")]
+    print(f"Using your recording: {own_voice}" if own_voice else f"Using the AI voice ({TTS_VOICE})")
+    print("Building the video (about a minute) ...")
+    info = make_video(Path(drafts[0]) if drafts else latest_draft(), own_voice)
     print(f"\nVideo saved: {info['path']}")
-    print(f"Length: {info['seconds']}s | voice: {voice_label} | music: {info['music'] or 'none'} | captions: {info['captions']}")
+    print(f"Length: {info['seconds']}s | voice: {info['voice']} | music: {info['music'] or 'none'} | captions: {info['captions']}")
 
 
 if __name__ == "__main__":

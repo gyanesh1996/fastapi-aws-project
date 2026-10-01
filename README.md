@@ -154,3 +154,34 @@ Videos are saved in `output/videos/`. Building one takes about a minute.
 | File | What it does |
 |---|---|
 | [app/video.py](app/video.py) | Makes the voice, times the captions, draws every frame and hands them to FFmpeg |
+
+## Phase 4: the Telegram bot
+
+```powershell
+python -m app.bot      # keep this window open; Ctrl+C stops the bot
+```
+
+**First time:**
+1. Create a bot with **@BotFather** in Telegram (`/newbot`).
+2. Put its token in `.env` as `TELEGRAM_BOT_TOKEN`.
+3. Run the bot. It prints a 4-digit code; send `/start <code>` to your bot.
+4. It saves your chat ID in `.env` and from then on **only answers you**.
+
+**In Telegram:**
+
+| You send | The bot |
+|---|---|
+| Any text, e.g. "chai ke saath roz biscuit" | Writes the script, makes and checks the poster, makes the video, and sends it with the fact-check and costs |
+| `/new` | Same, but Claude picks the topic |
+| ✅ Approve / ❌ Reject | Marks the draft `approved` / `rejected` (approved ones get uploaded in Phase 5) |
+| ✏️ Redo, then a message like "make it shorter" | Rewrites the Short with your change, keeping what worked |
+| 🎙️ Use my voice, then a voice note | Sends you the script to read, then remakes the video with your recording |
+| `/resend` | Sends again any video Telegram didn't confirm (it never resends by itself, to avoid duplicates on slow internet) |
+| `/cancel` | Stops waiting for a redo message or voice note |
+
+Every draft in `output/drafts/` has a `status`: `pending`, `approved`,
+`rejected` or `redone`. Your voice notes are kept in `output/recordings/`.
+
+| File | What it does |
+|---|---|
+| [app/bot.py](app/bot.py) | The bot: receives ideas, runs writer → poster → video, handles the buttons |

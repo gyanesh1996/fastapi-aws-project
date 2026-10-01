@@ -28,7 +28,7 @@ def past_topics(limit: int = 30) -> list[str]:
     return [json.loads(f.read_text(encoding="utf-8"))["content"]["topic"] for f in files]
 
 
-def build_request(idea: str | None, topic: str | None, avoid: list[str]) -> str:
+def build_request(idea: str | None, topic: str | None, avoid: list[str], feedback: dict | None = None) -> str:
     if idea:
         request = f"Idea from the channel owner:\n<idea>\n{idea}\n</idea>"
     elif topic:
@@ -37,18 +37,37 @@ def build_request(idea: str | None, topic: str | None, avoid: list[str]) -> str:
         request = "No idea from the channel owner today. Pick a useful topic yourself."
     if avoid:
         request += "\n\nTopics already made (pick something different):\n" + "\n".join(f"- {t}" for t in avoid)
+    if feedback:
+        prev = feedback["previous"]
+        request += (
+            "\n\nYou already wrote a version of this Short, and the channel owner asked for changes."
+            f"\n<previous_version>\nHook: {prev['hook']}\n"
+            f"Poster: {prev['poster_title']} | {' | '.join(prev['poster_points'])}\n"
+            f"Script: {prev['script_hinglish']}\n</previous_version>"
+            f"\n<owner_request>\n{feedback['request']}\n</owner_request>"
+            "\nWrite a new version that keeps what works and makes the changes they asked for. "
+            "The facts and safety rules still apply."
+        )
     return request
 
 
-def write_short(idea: str | None = None, client: anthropic.Anthropic | None = None) -> dict:
-    """Search the library, then write one Short. Returns everything needed to review and save it."""
+def write_short(
+    idea: str | None = None, client: anthropic.Anthropic | None = None, feedback: dict | None = None
+) -> dict:
+    """Search the library, then write one Short. Returns everything needed to review and save it.
+
+    feedback: {"previous": <content of the earlier version>, "request": "what the owner wants changed"}"""
     client = client or anthropic.Anthropic()
     notes = load_notes()
-    avoid = past_topics()
+    avoid = [] if feedback else past_topics()  # a redo is meant to stay on the same topic
 
     # Step 1: search. If it fails or finds nothing, fall back to the whole library (costs more, but still grounded).
-    pick, search_usage = pick_notes(idea, avoid, notes, client)
+    search_text = idea
+    if feedback:
+        search_text = f"{idea or feedback['previous']['topic']}\nChange requested by the owner: {feedback['request']}"
+    pick, search_usage = pick_notes(search_text, avoid, notes, client)
     selected = {i: notes[i] for i in pick.note_ids} if pick and pick.note_ids else notes
+    topic = feedback["previous"]["topic"] if feedback and not idea else (pick.topic if pick else None)
 
     # Step 2: write, with only the selected notes in the prompt.
     system_prompt = (PROMPTS_DIR / "writer_system.md").read_text(encoding="utf-8") + "\n\n" + library_prompt(selected)
@@ -60,7 +79,7 @@ def write_short(idea: str | None = None, client: anthropic.Anthropic | None = No
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
         system=system_prompt,
-        messages=[{"role": "user", "content": build_request(idea, pick.topic if pick else None, avoid)}],
+        messages=[{"role": "user", "content": build_request(idea, topic, avoid, feedback)}],
         output_format=ShortContent,
     )
     if response.stop_reason == "refusal":
@@ -88,14 +107,16 @@ def full_description(content: ShortContent, notes: dict[str, Note]) -> str:
     return f"{content.youtube_description}\n\nSource: {sources}\n{DISCLAIMER}"
 
 
-def save_draft(result: dict, idea: str | None) -> str:
+def save_draft(result: dict, idea: str | None, redo_of: str | None = None) -> str:
     content = result["content"]
     DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
     slug = re.sub(r"[^a-z0-9]+", "-", content.topic.lower()).strip("-")[:40]
     path = DRAFTS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}-{slug}.json"
     draft = {
         "created_at": datetime.now().isoformat(timespec="seconds"),
+        "status": "pending",
         "idea": idea,
+        "redo_of": redo_of,
         "notes_sent": result["notes_sent"],
         "usage": result["usage"],
         "grounding_problems": result["problems"],

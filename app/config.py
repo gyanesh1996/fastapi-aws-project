@@ -12,6 +12,8 @@ SEARCH_MODEL = "claude-haiku-4-5"  # picks library notes: a simple job, so the f
 
 BRAND_NAME = os.getenv("BRAND_NAME", "")  # shown at the top of posters; empty = no brand line
 TTS_VOICE = os.getenv("TTS_VOICE", "hi-IN-SwaraNeural")  # free AI voice; hi-IN-MadhurNeural is the male one
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")  # filled in automatically when you connect the bot
 
 PROMPTS_DIR = ROOT / "prompts"
 KNOWLEDGE_DIR = ROOT / "knowledge"
@@ -20,3 +22,4 @@ MUSIC_DIR = ROOT / "assets" / "music"
 DRAFTS_DIR = ROOT / "output" / "drafts"
 POSTERS_DIR = ROOT / "output" / "posters"
 VIDEOS_DIR = ROOT / "output" / "videos"
+RECORDINGS_DIR = ROOT / "output" / "recordings"
